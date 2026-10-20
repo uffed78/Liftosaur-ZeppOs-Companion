@@ -539,6 +539,7 @@ test('prepared active set UI matches contracts: no purple pill, > Start set coun
     heartRateColor: () => 0xffffff,
     formatHeartRate: (hr) => `${hr} bpm`,
     SESSION_STATES: { REST: 'REST', FINISHED: 'FINISHED' },
+    fineWeightStep: false,
     renderRestBezel: () => {},
     renderPreparationImage: () => false,
     exerciseImages: null,

@@ -271,6 +271,8 @@ let overviewPage = 0;
 let readyPage = 0;
 let selectedOverviewExerciseIndex = null;
 let overviewSetsPage = 0;
+let overviewWorkoutIdentity = null;
+let fineWeightStep = false;
 
 let finishState = null; // { status, message }
 
@@ -2602,6 +2604,22 @@ function renderTopBar(view, onBack) {
   });
 }
 
+function syncOverviewWorkout(view) {
+  const identity = JSON.stringify([
+    view.programId, view.startedAt, view.dayName, view.week, view.dayInWeek,
+    view.overviewExercises?.map((exercise) => exercise.entryId || exercise.id),
+  ]);
+  if (overviewWorkoutIdentity !== identity) {
+    selectedOverviewExerciseIndex = null;
+    overviewSetsPage = 0;
+    overviewWorkoutIdentity = identity;
+  }
+  if (!isOverviewOpen) {
+    selectedOverviewExerciseIndex = null;
+    overviewSetsPage = 0;
+  }
+}
+
 function restStatusColor(rest) {
   if (rest?.isPaused) return THEME.yellow;
   if (rest?.isOvertime) return THEME.error;
@@ -3209,10 +3227,12 @@ function renderActiveSetScreen(view) {
     y: px(controls.rows[0].y),
     height: controls.rowHeight,
     label: weightDisplay.label,
-    value: weightDisplay.value,
+    value: fineWeightStep ? `${weightDisplay.value} · Fine` : weightDisplay.value,
     valueColor: (hasPurpleBezel && pending?.changes.weight) ? THEME.primaryLight : THEME.textPrimary,
-    onMinus: () => persistAndRender(() => session.adjustWeight(-1)),
-    onPlus: () => persistAndRender(() => session.adjustWeight(1)),
+    onValueClick: () => { fineWeightStep = !fineWeightStep; renderUI(); },
+    labelHint: 'Tap value for fine step',
+    onMinus: () => persistAndRender(() => session.adjustWeight(fineWeightStep ? -0.5 : -1)),
+    onPlus: () => persistAndRender(() => session.adjustWeight(fineWeightStep ? 0.5 : 1)),
   });
 
   // Reps stepper
@@ -3276,7 +3296,7 @@ function renderActiveSetScreen(view) {
   });
 }
 
-function renderStepper({ key, y, height, label, value, valueColor = THEME.textPrimary, onMinus, onPlus }) {
+function renderStepper({ key, y, height, label, value, valueColor = THEME.textPrimary, labelHint = '', onValueClick, onMinus, onPlus }) {
   const buttonSize = px(height);
   const actionKey = ['weight', 'reps', 'rpe'].includes(key) ? key.toUpperCase() : null;
   const row = stepperRowLayout(height, Boolean(label));
@@ -3308,6 +3328,10 @@ function renderStepper({ key, y, height, label, value, valueColor = THEME.textPr
     align_v: align.CENTER_V,
     text_style: text_style.NONE,
     text: value,
+    ...(onValueClick ? {
+      diagnosticAction: 'TOGGLE_FINE_WEIGHT',
+      click_func: onValueClick,
+    } : {}),
   });
 
   if (label) addLiveLabel(`${key}-label`, {
@@ -3320,7 +3344,7 @@ function renderStepper({ key, y, height, label, value, valueColor = THEME.textPr
     align_h: align.CENTER_H,
     align_v: align.CENTER_V,
     text_style: text_style.NONE,
-    text: label,
+    text: labelHint ? `${label || ''} ${labelHint}`.trim() : label,
   });
 
   addWidget(widget.BUTTON, {
@@ -4242,6 +4266,7 @@ function renderScreen() {
   }
 
   const view = session.view();
+  syncOverviewWorkout(view);
   syncRestPresentation(view.rest);
 
   if (directSync.mode === 'DIRECT' && directSync.conflict) {

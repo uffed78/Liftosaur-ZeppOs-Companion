@@ -243,3 +243,115 @@ test('session can roll back an undo when local persistence fails', () => {
   assert.equal(session.getCompletedSet('s1').weight, 60);
   assert.deepEqual(session.getWorkoutSetWrites().map(write => write.completed), [{ reps: 8, weight: '60kg' }]);
 });
+
+test('set-list rows remain mapped by stable ID across supersets and out-of-order exercise selection', () => {
+  const plan = {
+    programId: 'p',
+    unit: 'kg',
+    exercises: [
+      { id: 'a', entryId: 'a', name: 'A', supersetGroup: 'AB', sets: [
+        { setId: 'a1', targetWeight: 50, targetReps: 8 },
+        { setId: 'a2', targetWeight: 52.5, targetReps: 8 },
+      ] },
+      { id: 'b', entryId: 'b', name: 'B', supersetGroup: 'AB', sets: [
+        { setId: 'b1', targetWeight: 30, targetReps: 10 },
+        { setId: 'b2', targetWeight: 32.5, targetReps: 10 },
+      ] },
+      { id: 'c', entryId: 'c', name: 'C', sets: [
+        { targetWeight: 20, targetReps: 12 },
+      ] },
+    ],
+  };
+  const session = createWorkoutSession({ plan });
+  session.startWorkout({ timestamp: 1000 });
+  session.completeSet({ timestamp: 2000, weight: 50, reps: 8 });
+  session.selectExercise(1, { timestamp: 2100 });
+  session.nextSet({ timestamp: 2200 });
+  session.completeSet({ timestamp: 3000, weight: 30, reps: 10 });
+  session.selectExercise(0, { timestamp: 3100 });
+  session.nextSet({ timestamp: 3200 });
+  session.completeSet({ timestamp: 4000, weight: 52.5, reps: 7 });
+  session.selectExercise(2, { timestamp: 4100 });
+  session.nextSet({ timestamp: 4200 });
+  session.completeSet({ timestamp: 5000, weight: 20, reps: 12, setId: 'reported-c-set' });
+
+  const [a, b, c] = session.view(5000).overviewExercises;
+  assert.deepEqual(a.sets.map(set => [set.setId, set.status, set.completed?.weight]), [
+    ['a1', 'completed', 50],
+    ['a2', 'completed', 52.5],
+  ]);
+  assert.deepEqual(b.sets.map(set => [set.setId, set.status, set.completed?.weight]), [
+    ['b1', 'completed', 30],
+    ['b2', 'active', undefined],
+  ]);
+  assert.deepEqual(c.sets.map(set => [set.setId, set.status, set.completed?.weight]), [
+    [null, 'completed', 20],
+  ]);
+  assert.equal(c.sets[0].completed.reps, 12);
+});
+
+test('imported and ID-less plan rows display their own completion without inventing edit IDs', () => {
+  const plan = {
+    programId: 'p',
+    unit: 'kg',
+    isCurrent: true,
+    exercises: [{
+      id: 'a', entryId: 'a', name: 'A',
+      sets: [
+        { setId: 'a1', completed: { weight: 60, reps: 8 } },
+        { completed: { weight: 62.5, reps: 7 } },
+        { targetWeight: 65, targetReps: 6 },
+      ],
+    }],
+  };
+  const session = createWorkoutSession({ plan });
+  session.startWorkout({ timestamp: 1000 });
+  const sets = session.view(1000).overviewExercises[0].sets;
+  assert.deepEqual(sets.map(set => [set.setId, set.status, set.completed?.weight]), [
+    ['a1', 'completed', 60],
+    [null, 'completed', 62.5],
+    [null, 'active', undefined],
+  ]);
+  assert.equal(sets[1].setId, null, 'an ID-less row must not acquire a guessed stable ID');
+});
+
+test('undo persistence rollback restores the exact active session after out-of-order superset selection', () => {
+  const plan = {
+    programId: 'p',
+    unit: 'kg',
+    exercises: [
+      { id: 'a', entryId: 'a', name: 'A', supersetGroup: 'AB', sets: [
+        { setId: 'a1', targetWeight: 50, targetReps: 8 },
+        { setId: 'a2', targetWeight: 52.5, targetReps: 8 },
+      ] },
+      { id: 'b', entryId: 'b', name: 'B', supersetGroup: 'AB', sets: [
+        { setId: 'b1', targetWeight: 30, targetReps: 10 },
+        { setId: 'b2', targetWeight: 32.5, targetReps: 10 },
+      ] },
+    ],
+  };
+  const session = createWorkoutSession({ plan });
+  session.startWorkout({ timestamp: 1000 });
+  session.completeSet({ timestamp: 2000 });
+  session.selectExercise(1, { timestamp: 2100 });
+  session.nextSet({ timestamp: 2200 });
+  session.completeSet({ timestamp: 3000 });
+  session.selectExercise(1, { timestamp: 3100 });
+  session.adjustWeight(1, { timestamp: 3150 });
+  session.selectExercise(0, { timestamp: 3200 });
+  session.adjustWeight(-1, { timestamp: 3250 });
+  session.nextSet({ timestamp: 3300 });
+  session.pauseWorkout({ timestamp: 3400, source: 'manual' });
+  const before = session.view(3500);
+  const journalBefore = session.getJournal();
+  const writesBefore = session.getWorkoutSetWrites();
+
+  assert.equal(session.undoSet({ setId: 'b1', timestamp: 3600 }), true);
+  assert.equal(session.rollbackLastUndo(), true);
+  assert.deepEqual(session.view(3500), before);
+  assert.deepEqual(session.getJournal(), journalBefore);
+  assert.deepEqual(session.getWorkoutSetWrites(), writesBefore);
+
+  session.selectExercise(1, { timestamp: 3700 });
+  assert.equal(session.view(3700).currentSet.weight, 32.5);
+});

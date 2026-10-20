@@ -1064,6 +1064,14 @@ export function createWorkoutSession({
         setId,
         completedSet: { ...check.set },
         previousExerciseIndex: currentExerciseIndex,
+        previousState: state,
+        previousRestInfo: restInfo ? { ...restInfo } : null,
+        previousSelectedPendingExerciseIndex: selectedPendingExerciseIndex,
+        previousActiveTimer: activeTimer ? { ...activeTimer } : null,
+        previousWorkoutEndTime: workoutEndTime,
+        previousPauseStartedAt: pauseStartedAt,
+        previousTotalPausedWorkoutDurationMs: totalPausedWorkoutDurationMs,
+        previousActivePauseReasons: [...activePauseReasons],
         targetProgress: captureProgress(targetProgress),
         currentProgress: captureProgress(currentProgress),
       },
@@ -1092,19 +1100,32 @@ export function createWorkoutSession({
   function rollbackLastUndo() {
     const lastEvent = journal[journal.length - 1];
     if (!lastEvent || lastEvent.type !== EVENT_TYPES.UNDO_SET) return false;
-    journal.pop();
-    setWrites.pop();
-    const { setId, previousExerciseIndex, targetProgress, currentProgress } = lastEvent.payload || {};
+    const {
+      setId, previousExerciseIndex, previousState, previousRestInfo,
+      previousSelectedPendingExerciseIndex, previousActiveTimer, previousWorkoutEndTime,
+      previousPauseStartedAt, previousTotalPausedWorkoutDurationMs,
+      previousActivePauseReasons, targetProgress, currentProgress,
+    } = lastEvent.payload || {};
     const removed = lastEvent.payload?.completedSet;
     const target = removed && progress[removed.exerciseArrayIndex];
     if (!setId || !removed || !target) return false;
+    journal.pop();
+    setWrites.pop();
     target.completedSets.push(removed);
     Object.assign(target, targetProgress);
     if (previousExerciseIndex !== removed.exerciseArrayIndex) {
       Object.assign(progress[previousExerciseIndex], currentProgress);
     }
     currentExerciseIndex = previousExerciseIndex;
-    state = SESSION_STATES.ACTIVE_SET;
+    state = previousState;
+    restInfo = previousRestInfo ? { ...previousRestInfo } : null;
+    selectedPendingExerciseIndex = previousSelectedPendingExerciseIndex ?? null;
+    activeTimer = previousActiveTimer ? { ...previousActiveTimer } : null;
+    workoutEndTime = previousWorkoutEndTime ?? null;
+    pauseStartedAt = previousPauseStartedAt ?? null;
+    totalPausedWorkoutDurationMs = previousTotalPausedWorkoutDurationMs ?? 0;
+    activePauseReasons.clear();
+    for (const reason of previousActivePauseReasons || []) activePauseReasons.add(reason);
     return true;
   }
 
@@ -1239,7 +1260,7 @@ export function createWorkoutSession({
           sets: ex.sets.map((set, setIdx) => {
             const completedSet = set.setId
               ? p.completedSets.find((item) => item.setId === set.setId)
-              : p.completedSets[setIdx]?.setId ? null : p.completedSets[setIdx];
+              : p.completedSets.find((item) => item.setIndex === setIdx + 1) || null;
             return {
               setId: set.setId,
               setIndex: setIdx + 1,

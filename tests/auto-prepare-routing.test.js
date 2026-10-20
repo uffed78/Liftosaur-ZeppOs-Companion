@@ -20,7 +20,7 @@ function renderer(product, session, autoPrepare, storedPreferences = new Map()) 
     createRestPresentationState, updateRestPresentation,
     isRestMinimized: false, isWorkoutTimerControlsOpen: false, isNotesModalOpen: false,
     isEditLastSetOpen: false, lastSetDraft: null, isSyncDetailsOpen: false,
-    isOverviewOpen: false, discardConfirmationRequested: false, phoneRequiredReason: null,
+    isOverviewOpen: false, syncOverviewWorkout() {}, discardConfirmationRequested: false, phoneRequiredReason: null,
     directSync: {}, lastRenderedState: null, lastRenderedSecond: null,
     renderActiveSetScreen: view => rendered.push(view.rest ? 'Prepare' : 'Active'),
     renderRestScreen: () => rendered.push('Rest'),

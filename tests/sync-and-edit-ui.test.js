@@ -14,8 +14,8 @@ function readSource(relPath) {
 function extractFunction(source, name) {
   const start = source.indexOf(`function ${name}(`);
   assert.ok(start >= 0, `function ${name} must exist`);
-  const nextFunc = source.indexOf('\nfunction ', start + 1);
-  return source.slice(start, nextFunc >= 0 ? nextFunc : undefined);
+  const nextDeclaration = source.slice(start + 1).search(/\n(?:function|const|let|class)\s+/);
+  return source.slice(start, nextDeclaration >= 0 ? start + 1 + nextDeclaration : undefined);
 }
 
 for (const product of ['page', 'data-widget']) {
@@ -272,6 +272,10 @@ test('both watch UIs open editable completed sets and choose exercise order with
       text_style: { NONE: 0 },
       px: value => value,
       font: () => 20,
+      stepperRowLayout: (height, hasLabel) => ({
+        valueHeight: height - (hasLabel ? 22 : 0),
+        labelHeight: hasLabel ? 22 : 0,
+      }),
       formatMarqueeText: value => value,
       renderTopBar: () => {},
       startEditSet: setId => calls.push(['edit', setId]),
@@ -312,6 +316,112 @@ test('both watch UIs open editable completed sets and choose exercise order with
     ]);
     assert.equal(env.isOverviewOpen, false);
     assert.equal(exercise.index, 1, 'selection does not reorder the program exercise');
+  }
+});
+
+test('exercise details reset on overview close or workout replacement in both UIs', () => {
+  for (const product of ['page', 'data-widget']) {
+    const source = readSource(`${product}/common/index.js`);
+    const env = {
+      overviewWorkoutIdentity: JSON.stringify(['program-a', 1000, 'Day A', 1, 1, ['entry-a']]),
+      selectedOverviewExerciseIndex: 0,
+      overviewSetsPage: 2,
+      isOverviewOpen: true,
+    };
+    vm.createContext(env);
+    vm.runInContext(extractFunction(source, 'syncOverviewWorkout'), env);
+
+    env.syncOverviewWorkout({
+      programId: 'program-a', startedAt: 1000, dayName: 'Day A', week: 1, dayInWeek: 1,
+      overviewExercises: [{ entryId: 'entry-a' }],
+    });
+    assert.equal(env.selectedOverviewExerciseIndex, 0, `${product} retains detail during same workout`);
+
+    env.syncOverviewWorkout({
+      programId: 'program-b', startedAt: 2000, dayName: 'Day B', week: 1, dayInWeek: 2,
+      overviewExercises: [{ entryId: 'entry-b' }],
+    });
+    assert.equal(env.selectedOverviewExerciseIndex, null, `${product} clears detail after workout replacement`);
+    assert.equal(env.overviewSetsPage, 0);
+
+    env.selectedOverviewExerciseIndex = 0;
+    env.overviewSetsPage = 1;
+    env.isOverviewOpen = false;
+    env.syncOverviewWorkout({
+      programId: 'program-b', startedAt: 2000, dayName: 'Day B', week: 1, dayInWeek: 2,
+      overviewExercises: [{ entryId: 'entry-b' }],
+    });
+    assert.equal(env.selectedOverviewExerciseIndex, null, `${product} clears detail on overview close`);
+    assert.match(source.slice(source.indexOf('function renderScreen(')), /syncOverviewWorkout\(view\)/);
+  }
+});
+
+test('new-set weight fine step is a touch target and paginated set rows fit without swipes', () => {
+  for (const product of ['page', 'data-widget']) {
+    const source = readSource(`${product}/common/index.js`);
+    const screen = source.slice(source.indexOf('function renderActiveSetScreen('), source.indexOf('function renderStepper(', source.indexOf('function renderActiveSetScreen(')));
+    assert.match(screen, /onValueClick:\s*\(\)\s*=>\s*\{\s*fineWeightStep = !fineWeightStep/);
+    assert.match(screen, /adjustWeight\(fineWeightStep \? -0\.5 : -1\)/);
+    assert.match(screen, /adjustWeight\(fineWeightStep \? 0\.5 : 1\)/);
+
+    const createdWidgets = [];
+    let fine = false;
+    const env = {
+      OVERVIEW_SETS_PAGE_SIZE: 5,
+      selectedOverviewExerciseIndex: 0,
+      overviewSetsPage: 0,
+      THEME: { primaryLight: 1, card: 2, primaryDark: 3, cardActive: 4, textPrimary: 5, textSecondary: 6, primary: 7, primaryDeep: 8 },
+      widget: { BUTTON: 1, TEXT: 2 },
+      align: { CENTER_H: 1, CENTER_V: 2 },
+      text_style: { NONE: 0 },
+      px: value => value,
+      font: () => 20,
+      stepperRowLayout: (height, hasLabel) => ({
+        valueHeight: height - (hasLabel ? 22 : 0),
+        labelHeight: hasLabel ? 22 : 0,
+      }),
+      formatMarqueeText: value => value,
+      renderTopBar: () => {},
+      renderUI: () => {},
+      scheduleRenderUI: () => {},
+      startEditSet: () => {},
+      workoutController: { canCorrectCompletedSet: () => ({ allowed: true }) },
+      addWidget: (type, props) => { const item = { type, props }; createdWidgets.push(item); return item; },
+    };
+    vm.createContext(env);
+    vm.runInContext(extractFunction(source, 'renderStepper'), env);
+    vm.runInContext(extractFunction(source, 'renderExerciseSetsScreen'), env);
+    const stepperWidgets = [];
+    env.addLiveLabel = (key, props) => { const item = { key, props }; stepperWidgets.push(item); return item; };
+    const increments = [];
+    env.renderStepper({
+      key: 'weight', y: 170, height: 62, label: 'kg',
+      value: '50 kg',
+      onValueClick: () => { fine = !fine; },
+      onMinus: () => increments.push(fine ? -0.5 : -1),
+      onPlus: () => increments.push(fine ? 0.5 : 1),
+    });
+    stepperWidgets.find(item => item.key === 'weight-value').props.click_func();
+    stepperWidgets.find(item => item.key === 'weight-value').props.click_func && assert.equal(fine, true);
+    increments.push(fine ? 0.5 : 1);
+    assert.deepEqual(increments, [0.5]);
+
+    const sets = Array.from({ length: 6 }, (_, index) => ({
+      setId: `set-${index}`, setIndex: index + 1, status: 'pending',
+      targetWeight: 50, targetReps: 8, unit: 'kg',
+    }));
+    env.overviewSetsPage = 0;
+    env.renderExerciseSetsScreen({ unit: 'kg' }, {
+      index: 0, name: 'Squat', totalSets: sets.length, completedSetsCount: 0, sets,
+    });
+    const rows = createdWidgets.filter(item => item.props.text?.includes('Pending · Set'));
+    const nextPage = createdWidgets.find(item => item.props.text === '›');
+    assert.equal(rows.length, 5);
+    assert.ok(nextPage, `${product} has a touch target for the next page`);
+    assert.equal(Math.max(...rows.map(item => item.props.y + item.props.h)), 351);
+    const choose = createdWidgets.find(item => item.props.text === 'Choose exercise');
+    assert.ok(choose);
+    assert.ok(choose.props.y + choose.props.h <= 442, 'all controls fit above the clock footer');
   }
 });
 

@@ -245,6 +245,39 @@ test('undo is latest-only, queued as Cloud uncompletion, and survives ambiguous 
   assert.equal(f.remote.entries[0].sets.filter(set => set.completed).length, 0);
 });
 
+test('mocked Cloud contract acknowledges undo, retries it after restore, then re-completes the same set ID', async () => {
+  const f = fixture();
+  f.controller.completeSet();
+  await f.controller.syncSets();
+  f.controller.nextSet();
+
+  f.setOffline(true);
+  assert.equal(f.controller.undoCompletedSet('set-0').success, true);
+  await assert.rejects(f.controller.syncSets(), /Offline/);
+  const restored = f.makeController();
+  assert.equal(restored.restore().success, true);
+  f.setOffline(false);
+  await restored.retryPendingWrites();
+
+  assert.equal(f.remote.entries[0].sets[0].completed, null);
+  assert.deepEqual(f.batches.at(-1), [{ entryId: 'bench', setId: 'set-0', completed: null }]);
+  assert.equal(restored.getPendingSetCount(), 0);
+
+  restored.adjustWeight(-2);
+  restored.adjustReps(1);
+  restored.completeSet();
+  await restored.syncSets();
+  assert.deepEqual(f.batches.at(-1), [{
+    entryId: 'bench', setId: 'set-0', completed: { reps: 9, weight: '55kg', rpe: 7 },
+  }]);
+  assert.deepEqual(f.remote.entries[0].sets[0].completed, {
+    reps: 9, weight: '55kg', rpe: 7,
+  });
+  assert.equal(f.batches.flat().filter(write => write.setId === 'set-0').length, 4);
+  await restored.syncSets();
+  assert.equal(f.batches.flat().filter(write => write.setId === 'set-0').length, 4, 'acknowledged work is not duplicated');
+});
+
 test('undo refuses an older completion while preserving the current completed sets', async () => {
   const f = fixture();
   f.controller.completeSet();

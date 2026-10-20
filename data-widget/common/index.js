@@ -143,6 +143,22 @@ function font(role) {
   return px(TYPOGRAPHY[role] || 24);
 }
 
+function syncOverviewWorkout(view) {
+  const identity = JSON.stringify([
+    view.programId, view.startedAt, view.dayName, view.week, view.dayInWeek,
+    view.overviewExercises?.map((exercise) => exercise.entryId || exercise.id),
+  ]);
+  if (overviewWorkoutIdentity !== identity) {
+    selectedOverviewExerciseIndex = null;
+    overviewSetsPage = 0;
+    overviewWorkoutIdentity = identity;
+  }
+  if (!isOverviewOpen) {
+    selectedOverviewExerciseIndex = null;
+    overviewSetsPage = 0;
+  }
+}
+
 const STORAGE_KEY = 'liftosaur.extension.session.v2';
 
 let deviceStorage = null;
@@ -318,6 +334,8 @@ let readyPage = 0;
 let overviewPage = 0;
 let selectedOverviewExerciseIndex = null;
 let overviewSetsPage = 0;
+let overviewWorkoutIdentity = null;
+let fineWeightStep = false;
 let notesPage = 0;
 let notesModalHasImage = false;
 let activeNotesImageUrl = null;
@@ -1723,7 +1741,7 @@ function renderReadyScreen(view) {
   });
 }
 
-function renderStepper({ key, y, height, label, value, valueColor = THEME.textPrimary, onMinus, onPlus }) {
+function renderStepper({ key, y, height, label, value, valueColor = THEME.textPrimary, labelHint = '', onValueClick, onMinus, onPlus }) {
   const buttonSize = px(height);
   const actionKey = ['weight', 'reps', 'rpe'].includes(key) ? key.toUpperCase() : null;
   const row = stepperRowLayout(height, Boolean(label));
@@ -1755,6 +1773,10 @@ function renderStepper({ key, y, height, label, value, valueColor = THEME.textPr
     align_v: align.CENTER_V,
     text_style: text_style.NONE,
     text: value,
+    ...(onValueClick ? {
+      diagnosticAction: 'TOGGLE_FINE_WEIGHT',
+      click_func: onValueClick,
+    } : {}),
   });
 
   if (label) addLiveLabel(`${key}-label`, {
@@ -1767,7 +1789,7 @@ function renderStepper({ key, y, height, label, value, valueColor = THEME.textPr
     align_h: align.CENTER_H,
     align_v: align.CENTER_V,
     text_style: text_style.NONE,
-    text: label,
+    text: labelHint ? `${label || ''} ${labelHint}`.trim() : label,
   });
 
   addWidget(widget.BUTTON, {
@@ -2026,14 +2048,16 @@ function renderActiveSetScreen(view) {
     y: px(controls.rows[0].y),
     height: controls.rowHeight,
     label: weightDisplay.label,
-    value: weightDisplay.value,
+    value: fineWeightStep ? `${weightDisplay.value} · Fine` : weightDisplay.value,
     valueColor: (hasPurpleBezel && pending?.changes.weight) ? THEME.primaryLight : THEME.textPrimary,
+    onValueClick: () => { fineWeightStep = !fineWeightStep; scheduleRenderUI(); },
+    labelHint: 'Tap value for fine step',
     onMinus: () => {
-      workoutController.adjustWeight(-1);
+      workoutController.adjustWeight(fineWeightStep ? -0.5 : -1);
       refreshActiveSetControls();
     },
     onPlus: () => {
-      workoutController.adjustWeight(1);
+      workoutController.adjustWeight(fineWeightStep ? 0.5 : 1);
       refreshActiveSetControls();
     },
   });
@@ -3611,6 +3635,7 @@ function renderScreen() {
   }
 
   const view = workoutController.view();
+  syncOverviewWorkout(view);
   syncRestPresentation(view.rest);
   const sync = workoutController.sync();
 
