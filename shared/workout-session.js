@@ -1039,9 +1039,9 @@ export function createWorkoutSession({
     if (state !== SESSION_STATES.ACTIVE_SET || activeTimer) {
       return { allowed: false, reason: 'Undo is only available between sets' };
     }
-    const completed = allCompletedSets();
-    const latest = completed[completed.length - 1];
+    const latest = getLatestCompletedSet();
     if (!latest) return { allowed: false, reason: 'No completed sets' };
+    if (latest.isAmbiguous) return { allowed: false, reason: latest.reason };
     if (latest.setId !== setId) return { allowed: false, reason: 'Only the latest completed set can be undone' };
     if (!latest.setId) return { allowed: false, reason: 'Set ID unavailable' };
     return { allowed: true, set: { ...latest } };

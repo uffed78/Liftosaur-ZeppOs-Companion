@@ -179,6 +179,8 @@ test('session: rejects unsupported/ambiguous sets (finished, unilateral, missing
   // No local sets were completed; order between imported exercises is unknown
   assert.equal(importedSession.canCorrectLastSet().allowed, false);
   assert.equal(importedSession.canCorrectLastSet().reason, 'Imported order unknown');
+  assert.equal(importedSession.canUndoSet('i_s3').allowed, false);
+  assert.equal(importedSession.canUndoSet('i_s3').reason, 'Imported order unknown');
 });
 
 
