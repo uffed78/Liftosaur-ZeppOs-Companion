@@ -271,6 +271,127 @@ export function createWorkoutController({
     return session.canCorrectLastSet();
   }
 
+  function canCorrectCompletedSet(setId) {
+    if (disposed) return { allowed: false, reason: 'Session closed' };
+    if (directSync.mode !== 'DIRECT') return { allowed: false, reason: 'Direct workout required' };
+    if (directSync.conflict) return { allowed: false, reason: 'Resolve the sync conflict first' };
+    if (directSync.remoteMissing) return { allowed: false, reason: 'Recover the workout first' };
+    if (directSync.finishRequestedAt !== null || directSync.discardRequestedAt !== null) {
+      return { allowed: false, reason: 'Workout is closing' };
+    }
+    return session.canCorrectSet(setId);
+  }
+
+  function createSetCorrectionDraft(setId) {
+    const check = canCorrectCompletedSet(setId);
+    if (!check.allowed) return { success: false, reason: check.reason };
+    const set = check.set;
+    return {
+      success: true,
+      draft: {
+        workoutStartedAt: session.view(now()).startedAt,
+        programId: session.view(now()).programId,
+        originalCompletion: completionFingerprint(set),
+        setId: set.setId,
+        entryId: set.entryId,
+        exerciseName: set.exerciseName,
+        exerciseIndex: set.exerciseIndex,
+        setIndex: set.setIndex,
+        isWarmup: set.isWarmup,
+        weight: set.weight,
+        reps: set.reps,
+        unit: set.unit,
+        step: weightStepFor(set.unit),
+        fineStep: false,
+      },
+    };
+  }
+
+  function saveSetCorrection(draft) {
+    const check = canCorrectCompletedSet(draft?.setId);
+    if (!check.allowed) return { success: false, reason: check.reason };
+    if (!draft?.setId) return { success: false, reason: 'Missing draft' };
+    const view = session.view(now());
+    if (draft.workoutStartedAt !== view.startedAt || draft.programId !== view.programId) {
+      return { success: false, reason: 'Workout changed. Reopen the editor.' };
+    }
+    if (completionFingerprint(check.set) !== draft.originalCompletion) {
+      return { success: false, reason: 'Set changed. Reopen the editor.' };
+    }
+    if (deferredServerWorkout) {
+      const remotePlan = mapWorkout(deferredServerWorkout, { units: dayPlan.unit, isCurrent: true });
+      const remoteSession = createWorkoutSession({ plan: remotePlan });
+      const remoteSet = remoteSession.getCompletedSet(draft.setId);
+      const knownIds = new Set(session.getWorkoutSetWrites().map((write) => write.setId));
+      const hasNewCompletion = remoteSession.getWorkoutSetWrites().some((write) => !knownIds.has(write.setId));
+      if (remotePlan?.startTime !== draft.workoutStartedAt || remotePlan?.programId !== draft.programId ||
+          hasNewCompletion || !remoteSet || completionFingerprint(remoteSet) !== draft.originalCompletion) {
+        return { success: false, reason: 'Cloud set changed. Reopen the editor after rest.' };
+      }
+    }
+    if (!Number.isFinite(draft.weight) || draft.weight < 0 || !Number.isSafeInteger(draft.reps) || draft.reps < 0) {
+      return { success: false, reason: 'Enter a valid weight and whole repetitions.' };
+    }
+    if (check.set.weight === draft.weight && check.set.reps === draft.reps) return { success: true };
+    if (!session.correctSet({ setId: draft.setId, weight: draft.weight, reps: draft.reps, timestamp: now() })) {
+      return { success: false, reason: 'Cannot edit this set.' };
+    }
+    // No callback or network request can observe an unpersisted correction.
+    try {
+      if (store && persist() !== true) throw new Error('Storage did not confirm the save');
+    } catch (error) {
+      session.rollbackLastCorrection();
+      logError('set correction persistence failed', error);
+      return { success: false, reason: 'Could not save on watch. Try again.' };
+    }
+    deferredServerWorkout = null;
+    notifyChange();
+    if (request) synchronizeDirectSets().catch((error) => logError('set correction sync failed', error));
+    return { success: true };
+  }
+
+  function canUndoCompletedSet(setId) {
+    if (disposed) return { allowed: false, reason: 'Session closed' };
+    if (directSync.mode !== 'DIRECT') return { allowed: false, reason: 'Direct workout required' };
+    if (directSync.conflict) return { allowed: false, reason: 'Resolve the sync conflict first' };
+    if (directSync.remoteMissing) return { allowed: false, reason: 'Recover the workout first' };
+    if (directSync.finishRequestedAt !== null || directSync.discardRequestedAt !== null) {
+      return { allowed: false, reason: 'Workout is closing' };
+    }
+    const check = session.canUndoSet(setId);
+    if (!check.allowed || !deferredServerWorkout) return check;
+    const remotePlan = mapWorkout(deferredServerWorkout, { units: dayPlan.unit, isCurrent: true });
+    const remoteSession = createWorkoutSession({ plan: remotePlan });
+    const remoteSet = remoteSession.getCompletedSet(setId);
+    const knownIds = new Set(session.getWorkoutSetWrites().map((write) => write.setId));
+    const hasNewCompletion = remoteSession.getWorkoutSetWrites().some((write) => !knownIds.has(write.setId));
+    if (remotePlan?.startTime !== session.view(now()).startedAt ||
+        remotePlan?.programId !== session.view(now()).programId || hasNewCompletion ||
+        !remoteSet || completionFingerprint(remoteSet) !== completionFingerprint(check.set)) {
+      return { allowed: false, reason: 'Cloud set changed. Refresh before undoing.' };
+    }
+    return check;
+  }
+
+  function undoCompletedSet(setId) {
+    const check = canUndoCompletedSet(setId);
+    if (!check.allowed) return { success: false, reason: check.reason };
+    if (!session.undoSet({ setId, timestamp: now() })) {
+      return { success: false, reason: 'Only the latest completed set can be undone.' };
+    }
+    try {
+      if (store && persist() !== true) throw new Error('Storage did not confirm the save');
+    } catch (error) {
+      session.rollbackLastUndo();
+      logError('set undo persistence failed', error);
+      return { success: false, reason: 'Could not save on watch. Try again.' };
+    }
+    deferredServerWorkout = null;
+    notifyChange();
+    if (request) synchronizeDirectSets().catch((error) => logError('set undo sync failed', error));
+    return { success: true };
+  }
+
   function completionFingerprint(set) {
     return JSON.stringify([
       set.entryId, set.setId, set.weight, set.reps, set.unit, set.rpe,
@@ -1215,74 +1336,20 @@ export function createWorkoutController({
 
     canCorrectLastSet,
 
+    canCorrectCompletedSet,
+    canUndoCompletedSet,
+    undoCompletedSet,
+    createSetCorrectionDraft,
+    saveSetCorrection,
     createLastSetDraft: () => {
       const check = canCorrectLastSet();
-      if (!check.allowed) return { success: false, reason: check.reason };
-      const set = check.set;
-      return {
-        success: true,
-        draft: {
-          workoutStartedAt: session.view(now()).startedAt,
-          programId: session.view(now()).programId,
-          originalCompletion: completionFingerprint(set),
-          setId: set.setId,
-          entryId: set.entryId,
-          exerciseName: set.exerciseName,
-          exerciseIndex: set.exerciseIndex,
-          setIndex: set.setIndex,
-          isWarmup: set.isWarmup,
-          weight: set.weight,
-          reps: set.reps,
-          unit: set.unit,
-          step: weightStepFor(set.unit),
-        },
-      };
+      return check.allowed ? createSetCorrectionDraft(check.set.setId) : { success: false, reason: check.reason };
     },
-
     saveLastSetCorrection: (draft) => {
       const check = canCorrectLastSet();
       if (!check.allowed) return { success: false, reason: check.reason };
-      if (!draft?.setId) return { success: false, reason: 'Missing draft' };
-      const view = session.view(now());
-      if (draft.workoutStartedAt !== view.startedAt || draft.programId !== view.programId) {
-        return { success: false, reason: 'Workout changed. Reopen the editor.' };
-      }
-      if (check.set.setId !== draft.setId) {
-        return { success: false, reason: 'Latest set changed. Reopen the editor.' };
-      }
-      if (completionFingerprint(check.set) !== draft.originalCompletion) {
-        return { success: false, reason: 'Set changed. Reopen the editor.' };
-      }
-      if (deferredServerWorkout) {
-        const remotePlan = mapWorkout(deferredServerWorkout, { units: dayPlan.unit, isCurrent: true });
-        const remoteSession = createWorkoutSession({ plan: remotePlan });
-        const remoteSet = remoteSession.getCompletedSet(draft.setId);
-        const knownIds = new Set(session.getWorkoutSetWrites().map((write) => write.setId));
-        const hasNewCompletion = remoteSession.getWorkoutSetWrites().some((write) => !knownIds.has(write.setId));
-        if (remotePlan?.startTime !== draft.workoutStartedAt || remotePlan?.programId !== draft.programId ||
-            hasNewCompletion || !remoteSet || completionFingerprint(remoteSet) !== draft.originalCompletion) {
-          return { success: false, reason: 'Cloud set changed. Reopen the editor after rest.' };
-        }
-      }
-      if (!Number.isFinite(draft.weight) || draft.weight < 0 || !Number.isSafeInteger(draft.reps) || draft.reps < 0) {
-        return { success: false, reason: 'Enter a valid weight and whole repetitions.' };
-      }
-      if (check.set.weight === draft.weight && check.set.reps === draft.reps) return { success: true };
-      if (!session.correctSet({ setId: draft.setId, weight: draft.weight, reps: draft.reps, timestamp: now() })) {
-        return { success: false, reason: 'Cannot edit this set.' };
-      }
-      // No callback or network request can observe an unpersisted correction.
-      try {
-        if (store && persist() !== true) throw new Error('Storage did not confirm the save');
-      } catch (error) {
-        session.rollbackLastCorrection();
-        logError('set correction persistence failed', error);
-        return { success: false, reason: 'Could not save on watch. Try again.' };
-      }
-      deferredServerWorkout = null;
-      notifyChange();
-      if (request) synchronizeDirectSets().catch((error) => logError('set correction sync failed', error));
-      return { success: true };
+      if (check.set.setId !== draft?.setId) return { success: false, reason: 'Latest set changed. Reopen the editor.' };
+      return saveSetCorrection(draft);
     },
 
     updateSync,

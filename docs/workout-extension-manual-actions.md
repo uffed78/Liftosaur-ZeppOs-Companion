@@ -9,6 +9,8 @@ This guide lists external actions that require human intervention in the Zepp De
 - **Lifto Companion**: `1123411`
 - **Lifto Workout Extension**: `1125789`
 
+These IDs belong to this project and are already registered. For another fork, register the app with your own Zepp Developer account and use only an ID assigned to that app; do not copy an upstream project's ID. The Companion ID is in the root `app.json`. The Workout Extension ID is supplied to its generator/build through `ZEPP_WORKOUT_EXTENSION_APP_ID`.
+
 Set the Workout App ID locally before its build or preview:
    ```bash
    export ZEPP_WORKOUT_EXTENSION_APP_ID=1125789
@@ -22,11 +24,27 @@ Or in PowerShell:
 
 ---
 
-## 2. Build Packages and Generate Preview QR Codes
+## 2. Install and authenticate Zeus
 
-Run the build and preview orchestrators:
+Install Node.js and npm, then install the official Zeus CLI globally and sign in to the Zepp Open Platform account that owns the registered app:
 
 ```bash
+npm install --global @zeppos/zeus-cli
+zeus login
+zeus status
+```
+
+`zeus login` opens the interactive account sign-in. `zeus status` confirms the CLI session. The first command is documented by the [official Zeus CLI guide](https://github.com/zepp-health/zeppos-docs/blob/main/docs/guides/tools/cli/index.md) and the [`@zeppos/zeus-cli` package](https://www.npmjs.com/package/@zeppos/zeus-cli).
+
+---
+
+## 3. Build packages and generate preview QR codes
+
+From the repository root, install project dependencies and run the repository's build/preview wrappers. The wrappers call `zeus build` for package builds. Preview wrappers call `zeus preview -s -t "<supported device list>"` and save the returned QR as a PNG under `build/`.
+
+```bash
+npm ci
+
 # Build standalone Companion package (Mini Program)
 npm run build:companion
 
@@ -43,6 +61,16 @@ npm run preview:companion
 ZEPP_WORKOUT_EXTENSION_APP_ID=1125789 npm run preview:workout
 ```
 
+In PowerShell, set the Workout ID once for the current shell:
+
+```powershell
+$env:ZEPP_WORKOUT_EXTENSION_APP_ID = '1125789'
+npm run build:workout
+npm run preview:workout
+```
+
+Outputs are `build/lifto-companion-qr.png` and `build/lifto-workout-qr.png`. Each preview requires a valid Zeus login and the real registered Workout ID. Do not commit or share stale QR files; preview links expire.
+
 ### Preview QR Expiry (~7 Days)
 
 - Both `npm run preview:*` commands upload the generated `.zab` package to Zepp servers via `zeus preview`.
@@ -51,18 +79,18 @@ ZEPP_WORKOUT_EXTENSION_APP_ID=1125789 npm run preview:workout
 
 ---
 
-## 3. Install on Physical Watch in Developer Mode
+## 4. Install on Physical Watch in Developer Mode
 
 1. Enable Developer Mode in the Zepp mobile app:
    - Navigate to **Profile > Settings > About**.
    - Tap the Zepp icon or version 7 times until Developer Mode is unlocked.
 2. In the Zepp mobile app, navigate to **Profile > your paired watch > Developer Mode**.
-3. Scan the preview QR code generated in step 2.
+3. Tap **+ > Scan** and scan the preview QR for the product being tested.
 4. Confirm installation of `Lifto Workout` to the connected watch.
 
 ---
 
-## 4. Configure Extension Phone Settings
+## 5. Configure Extension Phone Settings
 
 1. In the Zepp mobile app, go to **Profile > your paired watch > Developer Mode** (or App Management).
 2. Select **Lifto Workout** and open **Settings**.
@@ -72,7 +100,7 @@ ZEPP_WORKOUT_EXTENSION_APP_ID=1125789 npm run preview:workout
 
 ---
 
-## 5. Enable Lifto in a Native Workout on Watch
+## 6. Enable Lifto in a Native Workout on Watch
 
 Data page setup differs between watch hardware and Zepp OS versions:
 
@@ -97,7 +125,22 @@ Repeat the same path after selecting **Free Training**. This path is ASSUMED unt
 
 ---
 
-## 6. Execute Physical Hardware Test Plan
+## 7. Balance 2 smoke test (pending)
+
+Balance 2 is included in generated preview targets but **has not been physically tested; this is not a compatibility claim**. Before testing, record the exact watch model, firmware, Zepp OS version, Zepp app version, Lifto commit, and preview generation time. Test both products with their own QR:
+
+1. Install Lifto Companion and Lifto Workout from Developer Mode; confirm both launch/install without an error.
+2. In Companion, check round-screen layout and touch targets; select an exercise directly, inspect all sets, edit a completed set, and undo only when the latest-set action is offered.
+3. Enter a new set using normal and fine weight steps; verify the value changes and remains readable, along with reps +/-1.
+4. Check that direct exercise selection preserves the displayed program order and superset pairing. Tap controls rather than relying on swipe or crown input.
+5. In Workout, start a native Strength Training session, add the Lifto data page, and verify its screens and touch controls do not hide native workout controls or accidentally finish the activity.
+6. Complete sets, use the rest timer and pause/resume, then confirm the completion appears in Liftosaur. If safe test credentials and connectivity are available, also test offline queue recovery and re-completion of an undone set.
+7. Repeat the page installation and core set/rest flow in Free Training only if that workout type is exposed on the tested firmware; record unavailable paths as blocked, not passed.
+8. Capture results and any screenshots/log references without API keys or bearer tokens. Keep all rows `pending` until physically run, and report the precise model/firmware rather than generalizing to other Balance models.
+
+---
+
+## 8. Execute Physical Hardware Test Plan
 
 1. Follow the test cases in [docs/workout-extension-hardware-test-plan.md](workout-extension-hardware-test-plan.md).
 2. Record watch model, firmware version, Zepp OS version, commit hash, date, result (`pending` / `BLOCKED`), and telemetry.
@@ -106,7 +149,7 @@ Repeat the same path after selecting **Free Training**. This path is ASSUMED unt
 
 ---
 
-## 7. Store Submission (Release Gate)
+## 9. Store Submission (Release Gate)
 
 Once hardware validation passes:
 1. Generate the final release build (`npm run build:workout`).

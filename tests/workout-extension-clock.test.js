@@ -24,7 +24,7 @@ function createClockHarness(initialState = 'ACTIVE_SET') {
     isTearingDown: false, isPaused: false, hasBuilt: false, isDispatchingClick: false,
     isEditLastSetOpen: false, isSyncDetailsOpen: false, isWorkoutTimerControlsOpen: false,
     discardConfirmationRequested: false, phoneRequiredReason: null, isNotesModalOpen: false,
-    isOverviewOpen: false, isRestMinimized: false, liveWidgets: {}, renderTimer: null,
+    isOverviewOpen: false, syncOverviewWorkout() {}, isRestMinimized: false, liveWidgets: {}, renderTimer: null,
     screen: 'SESSION', EXTENSION_SCREENS: { SESSION: 'SESSION', HOME: 'HOME' },
     SESSION_STATES: { ACTIVE_SET: 'ACTIVE_SET', REST: 'REST', READY: 'READY', NO_PLAN: 'NO_PLAN', FINISHED: 'FINISHED' },
     controllerUiDirty: false, lastRenderedState: null, lastRenderedSecond: null,

@@ -38,6 +38,7 @@ export const EVENT_TYPES = {
   CANCEL_WORKOUT: 'CANCEL_WORKOUT',
   TIMED_SET: 'TIMED_SET',
   CORRECT_SET: 'CORRECT_SET',
+  UNDO_SET: 'UNDO_SET',
   LOCAL_COMPLETIONS: 'LOCAL_COMPLETIONS',
 };
 
@@ -759,6 +760,22 @@ export function createWorkoutSession({
         break;
       }
 
+      case EVENT_TYPES.UNDO_SET: {
+        const payload = event.payload || {};
+        const target = allCompletedSets().find((set) => set.setId === payload.setId);
+        const prog = target && progress[target.exerciseArrayIndex];
+        if (!target || !prog || prog.completedSets[prog.completedSets.length - 1]?.setId !== payload.setId) break;
+        prog.completedSets.pop();
+        prog.currentSetIndex = prog.completedSets.length;
+        currentExerciseIndex = target.exerciseArrayIndex;
+        loadSetTargets(currentExerciseIndex, prog.currentSetIndex);
+        state = SESSION_STATES.ACTIVE_SET;
+        restInfo = null;
+        selectedPendingExerciseIndex = null;
+        setWrites.push({ entryId: target.entryId, setId: target.setId, completed: null });
+        break;
+      }
+
       case EVENT_TYPES.LOCAL_COMPLETIONS: {
         const completions = event.payload?.completions || [];
         for (const record of completions) {
@@ -957,40 +974,44 @@ export function createWorkoutSession({
       : { isAmbiguous: true, reason: 'Imported order unknown' };
   }
 
-  function canCorrectLastSet() {
+  function canCorrectSet(setId) {
     if (state === SESSION_STATES.FINISHED || state === SESSION_STATES.NO_PLAN) {
       return { allowed: false, reason: state === SESSION_STATES.FINISHED ? 'Session finished' : 'No plan' };
     }
-    const latest = getLatestCompletedSet();
-    if (!latest) {
+    const target = setId ? allCompletedSets().find((set) => set.setId === setId) : null;
+    if (!target) {
       return { allowed: false, reason: 'No completed sets' };
     }
-    if (latest.isAmbiguous) {
-      return { allowed: false, reason: latest.reason };
-    }
-    if (latest.isUnilateral || latest.repsLeft !== null) {
+    if (target.isUnilateral || target.repsLeft !== null) {
       return { allowed: false, reason: 'Unilateral repetitions unsupported' };
     }
     if (
-      !latest.setId ||
-      latest.weight === null ||
-      latest.weight === undefined ||
-      !Number.isFinite(latest.weight) ||
-      latest.weight < 0 ||
-      latest.reps === null ||
-      latest.reps === undefined ||
-      !Number.isInteger(latest.reps) ||
-      latest.reps < 0
+      !target.setId ||
+      target.weight === null ||
+      target.weight === undefined ||
+      !Number.isFinite(target.weight) ||
+      target.weight < 0 ||
+      target.reps === null ||
+      target.reps === undefined ||
+      !Number.isInteger(target.reps) ||
+      target.reps < 0
     ) {
       return { allowed: false, reason: 'Missing required values' };
     }
-    return { allowed: true, set: { ...latest } };
+    return { allowed: true, set: { ...target } };
+  }
+
+  function canCorrectLastSet() {
+    const latest = getLatestCompletedSet();
+    if (!latest) return { allowed: false, reason: 'No completed sets' };
+    if (latest.isAmbiguous) return { allowed: false, reason: latest.reason };
+    return canCorrectSet(latest.setId);
   }
 
   function correctSet({ setId, weight, reps, timestamp = Date.now() } = {}) {
     if (state === SESSION_STATES.FINISHED || state === SESSION_STATES.NO_PLAN) return false;
-    const check = canCorrectLastSet();
-    if (!check.allowed || !check.set || check.set.setId !== setId) return false;
+    const check = canCorrectSet(setId);
+    if (!check.allowed || !check.set) return false;
     if (typeof weight !== 'number' || !Number.isFinite(weight) || weight < 0) return false;
     if (typeof reps !== 'number' || !Number.isInteger(reps) || reps < 0) return false;
 
@@ -1014,6 +1035,51 @@ export function createWorkoutSession({
     return true;
   }
 
+  function canUndoSet(setId) {
+    if (state !== SESSION_STATES.ACTIVE_SET || activeTimer) {
+      return { allowed: false, reason: 'Undo is only available between sets' };
+    }
+    const latest = getLatestCompletedSet();
+    if (!latest) return { allowed: false, reason: 'No completed sets' };
+    if (latest.isAmbiguous) return { allowed: false, reason: latest.reason };
+    if (latest.setId !== setId) return { allowed: false, reason: 'Only the latest completed set can be undone' };
+    if (!latest.setId) return { allowed: false, reason: 'Set ID unavailable' };
+    return { allowed: true, set: { ...latest } };
+  }
+
+  function undoSet({ setId, timestamp = Date.now() } = {}) {
+    const check = canUndoSet(setId);
+    if (!check.allowed) return false;
+    const targetProgress = progress[check.set.exerciseArrayIndex];
+    const currentProgress = progress[currentExerciseIndex];
+    const captureProgress = (prog) => ({
+      currentSetIndex: prog.currentSetIndex,
+      currentWeight: prog.currentWeight,
+      currentReps: prog.currentReps,
+      currentRpe: prog.currentRpe,
+    });
+    applyEvent({
+      type: EVENT_TYPES.UNDO_SET,
+      payload: {
+        setId,
+        completedSet: { ...check.set },
+        previousExerciseIndex: currentExerciseIndex,
+        previousState: state,
+        previousRestInfo: restInfo ? { ...restInfo } : null,
+        previousSelectedPendingExerciseIndex: selectedPendingExerciseIndex,
+        previousActiveTimer: activeTimer ? { ...activeTimer } : null,
+        previousWorkoutEndTime: workoutEndTime,
+        previousPauseStartedAt: pauseStartedAt,
+        previousTotalPausedWorkoutDurationMs: totalPausedWorkoutDurationMs,
+        previousActivePauseReasons: [...activePauseReasons],
+        targetProgress: captureProgress(targetProgress),
+        currentProgress: captureProgress(currentProgress),
+      },
+      timestamp,
+    });
+    return true;
+  }
+
   function rollbackLastCorrection() {
     const lastEvent = journal[journal.length - 1];
     if (!lastEvent || lastEvent.type !== EVENT_TYPES.CORRECT_SET) return false;
@@ -1028,6 +1094,38 @@ export function createWorkoutSession({
         break;
       }
     }
+    return true;
+  }
+
+  function rollbackLastUndo() {
+    const lastEvent = journal[journal.length - 1];
+    if (!lastEvent || lastEvent.type !== EVENT_TYPES.UNDO_SET) return false;
+    const {
+      setId, previousExerciseIndex, previousState, previousRestInfo,
+      previousSelectedPendingExerciseIndex, previousActiveTimer, previousWorkoutEndTime,
+      previousPauseStartedAt, previousTotalPausedWorkoutDurationMs,
+      previousActivePauseReasons, targetProgress, currentProgress,
+    } = lastEvent.payload || {};
+    const removed = lastEvent.payload?.completedSet;
+    const target = removed && progress[removed.exerciseArrayIndex];
+    if (!setId || !removed || !target) return false;
+    journal.pop();
+    setWrites.pop();
+    target.completedSets.push(removed);
+    Object.assign(target, targetProgress);
+    if (previousExerciseIndex !== removed.exerciseArrayIndex) {
+      Object.assign(progress[previousExerciseIndex], currentProgress);
+    }
+    currentExerciseIndex = previousExerciseIndex;
+    state = previousState;
+    restInfo = previousRestInfo ? { ...previousRestInfo } : null;
+    selectedPendingExerciseIndex = previousSelectedPendingExerciseIndex ?? null;
+    activeTimer = previousActiveTimer ? { ...previousActiveTimer } : null;
+    workoutEndTime = previousWorkoutEndTime ?? null;
+    pauseStartedAt = previousPauseStartedAt ?? null;
+    totalPausedWorkoutDurationMs = previousTotalPausedWorkoutDurationMs ?? 0;
+    activePauseReasons.clear();
+    for (const reason of previousActivePauseReasons || []) activePauseReasons.add(reason);
     return true;
   }
 
@@ -1159,6 +1257,27 @@ export function createWorkoutSession({
           workSetsCount: ex.workSetsCount,
           totalSets: ex.sets.length,
           completedSetsCount: p.completedSets.length,
+          sets: ex.sets.map((set, setIdx) => {
+            const completedSet = set.setId
+              ? p.completedSets.find((item) => item.setId === set.setId)
+              : p.completedSets.find((item) => item.setIndex === setIdx + 1) || null;
+            return {
+              setId: set.setId,
+              setIndex: setIdx + 1,
+              isWarmup: set.isWarmup,
+              status: completedSet ? 'completed'
+                : idx === currentExerciseIndex && setIdx === p.currentSetIndex && state === SESSION_STATES.ACTIVE_SET
+                  ? 'active' : 'pending',
+              targetWeight: set.targetWeight,
+              targetReps: set.targetReps,
+              targetRepsMax: set.targetRepsMax,
+              unit: set.unit || unit,
+              completed: completedSet ? {
+                weight: completedSet.weight,
+                reps: completedSet.reps,
+              } : null,
+            };
+          }),
           setsDots: ex.sets.map((_, setIdx) => {
             if (setIdx < p.completedSets.length) return 'completed';
             if (idx === currentExerciseIndex && setIdx === p.currentSetIndex && state === SESSION_STATES.ACTIVE_SET) {
@@ -1477,8 +1596,12 @@ export function createWorkoutSession({
       return set ? { ...set } : null;
     },
     canCorrectLastSet: () => canCorrectLastSet(),
+    canCorrectSet: (setId) => canCorrectSet(setId),
     correctSet: (options = {}) => correctSet(options),
     rollbackLastCorrection: () => rollbackLastCorrection(),
+    canUndoSet: (setId) => canUndoSet(setId),
+    undoSet: (options = {}) => undoSet(options),
+    rollbackLastUndo: () => rollbackLastUndo(),
     getLocalCompletions: () => getLocalCompletions(),
 
     getWorkoutIntervals(endTime = workoutEndTime) {

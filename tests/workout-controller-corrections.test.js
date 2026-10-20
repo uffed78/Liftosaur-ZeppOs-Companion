@@ -196,3 +196,111 @@ test('a newer deferred phone completion prevents editing the older last set', as
   await f.controller.requestRefresh();
   assert.equal(f.controller.saveLastSetCorrection(draft).success, false);
 });
+
+test('correction can target an earlier completed set without changing completion order', async () => {
+  const f = fixture();
+  f.controller.completeSet();
+  await f.controller.syncSets();
+  f.controller.nextSet();
+  f.controller.completeSet();
+  await f.controller.syncSets();
+
+  const draftResult = f.controller.createSetCorrectionDraft('set-0');
+  assert.equal(draftResult.success, true);
+  const result = f.controller.saveSetCorrection({ ...draftResult.draft, weight: 72.5, reps: 6 });
+  assert.equal(result.success, true);
+  await f.controller.syncSets();
+
+  const writes = f.controller.getWorkoutSetWrites();
+  assert.deepEqual(writes.map(write => write.setId), ['set-0', 'set-1', 'set-0']);
+  assert.deepEqual(f.remote.entries[0].sets[0].completed, { reps: 6, weight: '72.5kg', rpe: 7 });
+  assert.equal(f.controller.canCorrectCompletedSet('set-1').allowed, true);
+});
+
+test('undo is latest-only, queued as Cloud uncompletion, and survives ambiguous acknowledgement', async () => {
+  const f = fixture();
+  f.controller.completeSet();
+  await f.controller.syncSets();
+  assert.equal(f.controller.canUndoCompletedSet('set-0').allowed, false, 'rest blocks undo');
+  f.controller.nextSet();
+  f.setOffline(true);
+  const result = f.controller.undoCompletedSet('set-0');
+  assert.equal(result.success, true);
+  assert.deepEqual(f.controller.getWorkoutSetWrites().at(-1), {
+    entryId: 'bench', setId: 'set-0', completed: null,
+  });
+
+  // Cloud applied the idempotent uncompletion, but the acknowledgement was lost.
+  f.remote.entries[0].sets[0].completed = null;
+  await assert.rejects(f.controller.syncSets(), /Offline/);
+  const restored = f.makeController();
+  assert.equal(restored.restore().success, true);
+  assert.equal(restored.getPendingSetCount(), 1);
+  assert.equal(restored.view().allCompletedSets.length, 0);
+
+  f.setOffline(false);
+  await restored.retryPendingWrites();
+  assert.equal(restored.getPendingSetCount(), 0);
+  assert.equal(f.remote.entries[0].sets[0].completed, null);
+  assert.equal(f.remote.entries[0].sets.filter(set => set.completed).length, 0);
+});
+
+test('mocked Cloud contract acknowledges undo, retries it after restore, then re-completes the same set ID', async () => {
+  const f = fixture();
+  f.controller.completeSet();
+  await f.controller.syncSets();
+  f.controller.nextSet();
+
+  f.setOffline(true);
+  assert.equal(f.controller.undoCompletedSet('set-0').success, true);
+  await assert.rejects(f.controller.syncSets(), /Offline/);
+  const restored = f.makeController();
+  assert.equal(restored.restore().success, true);
+  f.setOffline(false);
+  await restored.retryPendingWrites();
+
+  assert.equal(f.remote.entries[0].sets[0].completed, null);
+  assert.deepEqual(f.batches.at(-1), [{ entryId: 'bench', setId: 'set-0', completed: null }]);
+  assert.equal(restored.getPendingSetCount(), 0);
+
+  restored.adjustWeight(-2);
+  restored.adjustReps(1);
+  restored.completeSet();
+  await restored.syncSets();
+  assert.deepEqual(f.batches.at(-1), [{
+    entryId: 'bench', setId: 'set-0', completed: { reps: 9, weight: '55kg', rpe: 7 },
+  }]);
+  assert.deepEqual(f.remote.entries[0].sets[0].completed, {
+    reps: 9, weight: '55kg', rpe: 7,
+  });
+  assert.equal(f.batches.flat().filter(write => write.setId === 'set-0').length, 4);
+  await restored.syncSets();
+  assert.equal(f.batches.flat().filter(write => write.setId === 'set-0').length, 4, 'acknowledged work is not duplicated');
+});
+
+test('undo refuses an older completion while preserving the current completed sets', async () => {
+  const f = fixture();
+  f.controller.completeSet();
+  await f.controller.syncSets();
+  f.controller.nextSet();
+  f.controller.completeSet();
+  await f.controller.syncSets();
+  f.controller.nextSet();
+  assert.equal(f.controller.canUndoCompletedSet('set-0').allowed, false);
+  assert.equal(f.controller.canUndoCompletedSet('set-1').allowed, true);
+  assert.equal(f.controller.view().allCompletedSets.length, 2);
+});
+
+test('failed local persistence rolls an undo back before any Cloud write', async () => {
+  const f = fixture();
+  f.controller.completeSet();
+  await f.controller.syncSets();
+  f.controller.nextSet();
+  f.store.save = () => false;
+
+  const result = f.controller.undoCompletedSet('set-0');
+  assert.equal(result.success, false);
+  assert.equal(f.controller.view().allCompletedSets.length, 1);
+  assert.equal(f.controller.getWorkoutSetWrites().length, 1);
+  assert.equal(f.batches.length, 1, 'undo must not reach Cloud before durable local save');
+});

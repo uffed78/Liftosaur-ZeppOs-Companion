@@ -155,6 +155,7 @@ function createMockEnv({ source, isCompanion = false, viewOverride = {} }) {
     ...restVisual,
     EXTENSION_TOP_BAR_LAYOUT,
     MENU_LABEL,
+    fineWeightStep: false,
     restHaloWidgets: [],
     restPulseAnimHandles: [],
     restPulseAttempted: false,
