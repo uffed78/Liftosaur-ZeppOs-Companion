@@ -125,6 +125,8 @@ const THEME = {
   textDisabled: 0x607284,
 };
 
+const OVERVIEW_SETS_PAGE_SIZE = 5;
+
 const DEFAULT_SCREEN_ON_SECONDS = 120;
 const ALWAYS_SCREEN_ON_MS = 1800000;
 
@@ -267,6 +269,8 @@ let syncWarning = null;
 let isOverviewOpen = false;
 let overviewPage = 0;
 let readyPage = 0;
+let selectedOverviewExerciseIndex = null;
+let overviewSetsPage = 0;
 
 let finishState = null; // { status, message }
 
@@ -2724,6 +2728,9 @@ function renderPreparedTopBar(view, onRest) {
 }
 
 function renderOverviewScreen(view) {
+  if (selectedOverviewExerciseIndex !== null) {
+    return renderExerciseSetsScreen(view, view.overviewExercises[selectedOverviewExerciseIndex]);
+  }
   renderTopBar(view, () => {
     isOverviewOpen = false;
     renderUI();
@@ -2788,10 +2795,9 @@ function renderOverviewScreen(view) {
       text: '',
       diagnosticAction: 'SELECT_EXERCISE',
       click_func: () => {
-        session.selectExercise(idx);
-        isOverviewOpen = false;
-        persistAndRender();
-        requestWorkoutRefresh();
+        selectedOverviewExerciseIndex = idx;
+        overviewSetsPage = 0;
+        renderUI();
       },
     });
     for (const [text, offset, color] of [
@@ -2892,6 +2898,94 @@ function renderOverviewScreen(view) {
       },
     });
   }
+}
+
+function renderExerciseSetsScreen(view, exercise) {
+  if (!exercise) {
+    selectedOverviewExerciseIndex = null;
+    return renderOverviewScreen(view);
+  }
+  renderTopBar(view, () => {
+    selectedOverviewExerciseIndex = null;
+    renderUI();
+    requestWorkoutRefresh();
+  });
+  addWidget(widget.TEXT, {
+    x: px(64), y: px(96), w: px(352), h: px(30),
+    color: THEME.primaryLight, text_size: font('title'),
+    align_h: align.CENTER_H, align_v: align.CENTER_V,
+    text_style: text_style.NONE, text: formatMarqueeText(exercise.name, 18),
+  });
+
+  const sets = exercise.sets || [];
+  const totalPages = Math.max(1, Math.ceil(sets.length / OVERVIEW_SETS_PAGE_SIZE));
+  overviewSetsPage = Math.min(Math.max(overviewSetsPage, 0), totalPages - 1);
+  const start = overviewSetsPage * OVERVIEW_SETS_PAGE_SIZE;
+  sets.slice(start, start + OVERVIEW_SETS_PAGE_SIZE).forEach((set, offset) => {
+    const setIndex = start + offset;
+    const completed = set.completed;
+    const status = completed ? 'Done' : set.status === 'active' ? 'Next' : 'Pending';
+    const value = completed
+      ? `${completed.weight ?? '-'}${set.unit || view.unit} × ${completed.reps ?? '-'}`
+      : `${set.targetWeight ?? '-'}${set.unit || view.unit} × ${set.targetReps ?? '-'}`;
+    const canEdit = completed && set.setId
+      ? workoutController.canCorrectCompletedSet(set.setId)
+      : { allowed: false };
+    addWidget(widget.BUTTON, {
+      x: px(64), y: px(145 + offset * 42), w: px(352), h: px(38),
+      radius: px(12),
+      normal_color: canEdit.allowed ? THEME.primaryDark : THEME.card,
+      press_color: THEME.cardActive,
+      color: completed ? THEME.textPrimary : THEME.textSecondary,
+      text: `${status} · Set ${set.setIndex}${set.isWarmup ? ' W' : ''}  ${value}${canEdit.allowed ? '  Edit' : ''}`,
+      text_size: font('micro'),
+      ...(canEdit.allowed ? {
+        diagnosticAction: 'EDIT_COMPLETED_SET',
+        click_func: () => startEditSet(set.setId),
+      } : {}),
+    });
+  });
+  if (sets.length === 0) {
+    renderSubtitle('No sets available');
+  }
+
+  if (totalPages > 1) {
+    addWidget(widget.BUTTON, {
+      x: px(148), y: px(361), w: px(56), h: px(34), radius: px(17),
+      normal_color: THEME.card, press_color: THEME.cardActive,
+      text: '‹', text_size: font('button'),
+      click_func: () => { overviewSetsPage = Math.max(0, overviewSetsPage - 1); renderUI(); },
+    });
+    addWidget(widget.TEXT, {
+      x: px(204), y: px(361), w: px(72), h: px(34),
+      color: THEME.textSecondary, text_size: font('micro'),
+      align_h: align.CENTER_H, align_v: align.CENTER_V,
+      text_style: text_style.NONE, text: `${overviewSetsPage + 1}/${totalPages}`,
+    });
+    addWidget(widget.BUTTON, {
+      x: px(276), y: px(361), w: px(56), h: px(34), radius: px(17),
+      normal_color: THEME.card, press_color: THEME.cardActive,
+      text: '›', text_size: font('button'),
+      click_func: () => { overviewSetsPage = Math.min(totalPages - 1, overviewSetsPage + 1); renderUI(); },
+    });
+  }
+
+  const canSelect = exercise.completedSetsCount < exercise.totalSets;
+  addWidget(widget.BUTTON, {
+    x: px(112), y: px(401), w: px(256), h: px(40), radius: px(20),
+    normal_color: canSelect ? THEME.primary : THEME.card,
+    press_color: canSelect ? THEME.primaryDeep : THEME.cardActive,
+    color: canSelect ? THEME.textPrimary : THEME.textSecondary,
+    text: canSelect ? 'Choose exercise' : 'Exercise complete',
+    text_size: font('caption'),
+    ...(canSelect ? { click_func: () => {
+      workoutController.selectExercise(exercise.index);
+      selectedOverviewExerciseIndex = null;
+      isOverviewOpen = false;
+      persistAndRender();
+      requestWorkoutRefresh();
+    } } : {}),
+  });
 }
 
 let renderedTimedPhase = null;
@@ -3645,6 +3739,22 @@ function startEditLastSet() {
   renderUI();
 }
 
+function startEditSet(setId) {
+  if (isTearingDown) return;
+  const draftResult = workoutController?.createSetCorrectionDraft?.(setId);
+  if (!draftResult || !draftResult.success || !draftResult.draft) {
+    lastSetEditError = draftResult?.reason || 'Cannot edit this set.';
+    renderUI();
+    return;
+  }
+  lastSetEditError = null;
+  lastSetDraft = draftResult.draft;
+  isSyncDetailsOpen = false;
+  isEditLastSetOpen = true;
+  controllerUiDirty = true;
+  renderUI();
+}
+
 function cancelEditLastSet() {
   if (isTearingDown) return;
   isEditLastSetOpen = false;
@@ -3656,9 +3766,26 @@ function cancelEditLastSet() {
 
 function saveEditLastSet() {
   if (isTearingDown) return;
-  const result = workoutController?.saveLastSetCorrection?.(lastSetDraft);
+  const save = workoutController?.saveSetCorrection || workoutController?.saveLastSetCorrection;
+  const result = save?.call(workoutController, lastSetDraft);
   if (!result?.success) {
     lastSetEditError = result?.reason || 'Could not save. Try again.';
+    controllerUiDirty = true;
+    renderUI();
+    return;
+  }
+  lastSetEditError = null;
+  isEditLastSetOpen = false;
+  lastSetDraft = null;
+  controllerUiDirty = true;
+  renderUI();
+}
+
+function undoEditedSet() {
+  if (isTearingDown || !lastSetDraft?.setId) return;
+  const result = workoutController?.undoCompletedSet?.(lastSetDraft.setId);
+  if (!result?.success) {
+    lastSetEditError = result?.reason || 'Could not undo this set.';
     controllerUiDirty = true;
     renderUI();
     return;
@@ -3811,7 +3938,7 @@ function renderEditLastSetScreen() {
     text: setLabel,
   });
 
-  const step = draft.step;
+  const step = draft.step * (draft.fineStep ? 0.5 : 1);
   renderStepper({
     key: 'correction-weight',
     y: px(layout.weightY),
@@ -3826,6 +3953,14 @@ function renderEditLastSetScreen() {
       draft.weight = Math.max(0, Math.round((draft.weight + step) * 100) / 100);
       renderUI();
     },
+  });
+
+  addWidget(widget.BUTTON, {
+    x: px(145), y: px(284), w: px(190), h: px(28), radius: px(14),
+    normal_color: THEME.card, press_color: THEME.cardActive,
+    color: THEME.textSecondary, text_size: font('micro'),
+    text: `Fine step ${draft.fineStep ? 'ON' : 'OFF'}`,
+    click_func: () => { draft.fineStep = !draft.fineStep; renderUI(); },
   });
 
   renderStepper({
@@ -3871,6 +4006,15 @@ function renderEditLastSetScreen() {
     text_size: font('button'),
     click_func: saveEditLastSet,
   });
+  const canUndo = workoutController?.canUndoCompletedSet?.(draft.setId);
+  if (canUndo?.allowed && !lastSetEditError) {
+    addWidget(widget.BUTTON, {
+      x: px(140), y: px(386), w: px(200), h: px(40), radius: px(20),
+      normal_color: THEME.card, press_color: THEME.cardActive,
+      color: THEME.error, text: 'Undo latest set', text_size: font('caption'),
+      click_func: undoEditedSet,
+    });
+  }
   if (lastSetEditError) {
     addWidget(widget.TEXT, {
       x: px(layout.errorX), y: px(layout.errorY),

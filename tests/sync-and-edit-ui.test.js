@@ -243,6 +243,78 @@ for (const product of ['page', 'data-widget']) {
   });
 }
 
+test('both watch UIs expose completed sets, direct exercise selection, fine steps, and safe undo', () => {
+  for (const product of ['page', 'data-widget']) {
+    const source = readSource(`${product}/common/index.js`);
+    assert.match(source, /function renderExerciseSetsScreen\(view, exercise\)/);
+    assert.match(source, /workoutController\.canCorrectCompletedSet\(set\.setId\)/);
+    assert.match(source, /startEditSet\(set\.setId\)/);
+    assert.match(source, /workoutController\.selectExercise\(exercise\.index\)/);
+    assert.match(source, /Fine step \$\{draft\.fineStep \? 'ON' : 'OFF'\}/);
+    assert.match(source, /canUndoCompletedSet\?\.\(draft\.setId\)/);
+    assert.match(source, /undoCompletedSet\?\.\(lastSetDraft\.setId\)/);
+  }
+});
+
+test('both watch UIs open editable completed sets and choose exercise order without rewriting the list', () => {
+  for (const product of ['page', 'data-widget']) {
+    const source = readSource(`${product}/common/index.js`);
+    const createdWidgets = [];
+    const calls = [];
+    const env = {
+      selectedOverviewExerciseIndex: 0,
+      overviewSetsPage: 0,
+      isOverviewOpen: true,
+      OVERVIEW_SETS_PAGE_SIZE: 5,
+      THEME: { primaryLight: 1, card: 2, primaryDark: 3, cardActive: 4, textPrimary: 5, textSecondary: 6, primary: 7, primaryDeep: 8 },
+      widget: { BUTTON: 1, TEXT: 2 },
+      align: { CENTER_H: 1, CENTER_V: 2 },
+      text_style: { NONE: 0 },
+      px: value => value,
+      font: () => 20,
+      formatMarqueeText: value => value,
+      renderTopBar: () => {},
+      startEditSet: setId => calls.push(['edit', setId]),
+      workoutController: {
+        canCorrectCompletedSet: setId => ({ allowed: setId === 's1' }),
+        selectExercise: index => calls.push(['select', index]),
+      },
+      addWidget: (type, props) => { const item = { type, props }; createdWidgets.push(item); return item; },
+      requestWorkoutRefresh: () => calls.push(['refresh']),
+      persistAndRender: () => calls.push(['persist']),
+      renderUI: () => calls.push(['render']),
+      scheduleRenderUI: () => calls.push(['schedule']),
+    };
+    const view = { unit: 'kg' };
+    const exercise = {
+      index: 1, name: 'Squat', completedSetsCount: 1, totalSets: 2,
+      sets: [
+        { setId: 's1', setIndex: 1, status: 'completed', completed: { weight: 60, reps: 8 }, unit: 'kg' },
+        { setId: 's2', setIndex: 2, status: 'active', targetWeight: 62.5, targetReps: 8, unit: 'kg' },
+      ],
+    };
+    vm.createContext(env);
+    vm.runInContext(extractFunction(source, 'renderExerciseSetsScreen'), env);
+    env.renderExerciseSetsScreen(view, exercise);
+
+    const editButton = createdWidgets.find(item => item.props.diagnosticAction === 'EDIT_COMPLETED_SET');
+    assert.ok(editButton, `${product} renders an edit action for a completed set`);
+    editButton.props.click_func();
+    assert.deepEqual(calls[0], ['edit', 's1']);
+    assert.equal(createdWidgets.some(item => item.props.text.includes('Next · Set 2')), true);
+
+    const chooseButton = createdWidgets.find(item => item.props.text === 'Choose exercise');
+    assert.ok(chooseButton, `${product} exposes direct exercise selection`);
+    chooseButton.props.click_func();
+    assert.deepEqual(calls.slice(1, 3), [
+      ['select', 1],
+      [product === 'page' ? 'persist' : 'schedule'],
+    ]);
+    assert.equal(env.isOverviewOpen, false);
+    assert.equal(exercise.index, 1, 'selection does not reorder the program exercise');
+  }
+});
+
 test('layout geometry fits within round (480x480) and square (390x450) watch screens', () => {
   const roundLayout = createScreenLayout({ width: 480, height: 480, screenShape: 1 });
   const squareLayout = createScreenLayout({ width: 390, height: 450, screenShape: 0 });

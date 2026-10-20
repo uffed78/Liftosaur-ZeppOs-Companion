@@ -40,6 +40,14 @@ test('session: completes a set and can identify the latest completed set', () =>
   assert.equal(check.set.weight, 60);
   assert.equal(check.set.reps, 8);
   assert.equal(check.set.completedAt, 2000);
+  assert.deepEqual(session.view(2000).overviewExercises[0].sets.map(set => ({
+    setId: set.setId,
+    status: set.status,
+    completed: set.completed,
+  })), [
+    { setId: 's1', status: 'completed', completed: { weight: 60, reps: 8 } },
+    { setId: 's2', status: 'pending', completed: null },
+  ]);
 });
 
 test('session: correctSet updates weight and reps while preserving completedAt, rest, pause, and units', () => {
@@ -174,7 +182,7 @@ test('session: rejects unsupported/ambiguous sets (finished, unilateral, missing
 });
 
 
-test('session rejects an older target and unilateral sets even without left-side results', () => {
+test('session corrects an older set by stable ID and rejects unilateral sets without left-side results', () => {
   const plan = makeSimplePlan();
   plan.exercises[0].sets.push({ index: 3, setId: 's3', targetWeight: 60, targetReps: 8 });
   const session = createWorkoutSession({ plan });
@@ -183,11 +191,53 @@ test('session rejects an older target and unilateral sets even without left-side
   session.nextSet({ timestamp: 2100 });
   session.completeSet({ timestamp: 3000 });
   const before = session.getWorkoutSetWrites();
-  assert.equal(session.correctSet({ setId: 's1', weight: 70, reps: 9 }), false);
-  assert.deepEqual(session.getWorkoutSetWrites(), before);
+  assert.equal(session.canCorrectSet('s1').allowed, true);
+  assert.equal(session.correctSet({ setId: 's1', weight: 70, reps: 9 }), true);
+  assert.equal(session.getWorkoutSetWrites().length, before.length + 1);
+  assert.equal(session.getWorkoutSetWrites().at(-1).setId, 's1');
+  assert.deepEqual(session.getWorkoutSetWrites().at(-1).completed, { reps: 9, weight: '70kg' });
   plan.exercises[0].sets[0].isUnilateral = true;
   const unilateral = createWorkoutSession({ plan });
   unilateral.startWorkout({ timestamp: 1000 });
   unilateral.completeSet({ timestamp: 2000 });
   assert.equal(unilateral.canCorrectLastSet().allowed, false);
+});
+
+test('session undo only accepts the latest set between sets and replays the uncompletion write', () => {
+  const plan = makeSimplePlan();
+  plan.exercises[0].sets.push({ index: 3, setId: 's3', targetWeight: 60, targetReps: 8 });
+  const session = createWorkoutSession({ plan });
+  session.startWorkout({ timestamp: 1000 });
+  session.completeSet({ timestamp: 2000 });
+  assert.equal(session.canUndoSet('s1').allowed, false, 'cannot undo during rest');
+  session.nextSet({ timestamp: 3000 });
+  session.completeSet({ timestamp: 4000 });
+  assert.equal(session.canUndoSet('s1').allowed, false, 'cannot undo a non-latest set');
+  assert.equal(session.canUndoSet('s2').allowed, false, 'rest must finish before undo');
+  session.nextSet({ timestamp: 5000 });
+  assert.equal(session.undoSet({ setId: 's2', timestamp: 6000 }), true);
+  assert.deepEqual(session.getWorkoutSetWrites().at(-1), {
+    entryId: 'entry-1', setId: 's2', completed: null,
+  });
+  assert.equal(session.getCompletedSet('s2'), null);
+  assert.equal(session.view(6000).state, SESSION_STATES.ACTIVE_SET);
+  assert.equal(session.view(6000).currentSetIndex, 1);
+
+  const replayed = createWorkoutSession({ plan, initialJournal: session.getJournal() });
+  assert.deepEqual(replayed.getWorkoutSetWrites(), session.getWorkoutSetWrites());
+  assert.equal(replayed.getCompletedSet('s2'), null);
+  assert.equal(replayed.view(6000).currentSetIndex, 1);
+});
+
+test('session can roll back an undo when local persistence fails', () => {
+  const plan = makeSimplePlan();
+  const session = createWorkoutSession({ plan });
+  session.startWorkout({ timestamp: 1000 });
+  session.completeSet({ timestamp: 2000 });
+  session.nextSet({ timestamp: 3000 });
+  assert.equal(session.undoSet({ setId: 's1', timestamp: 4000 }), true);
+  assert.equal(session.getCompletedSet('s1'), null);
+  assert.equal(session.rollbackLastUndo(), true);
+  assert.equal(session.getCompletedSet('s1').weight, 60);
+  assert.deepEqual(session.getWorkoutSetWrites().map(write => write.completed), [{ reps: 8, weight: '60kg' }]);
 });
