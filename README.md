@@ -4,7 +4,7 @@ Unofficial [Liftosaur](https://www.liftosaur.com) clients for round and square A
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Zepp OS](https://img.shields.io/badge/Zepp%20OS-3.6%2B-purple.svg)
-[![CI](https://github.com/PreciselyWrong/Liftosaur-ZeppOs-Companion/actions/workflows/ci.yml/badge.svg)](https://github.com/PreciselyWrong/Liftosaur-ZeppOs-Companion/actions/workflows/ci.yml)
+[![CI](https://github.com/uffed78/Liftosaur-ZeppOs-Companion/actions/workflows/ci.yml/badge.svg)](https://github.com/uffed78/Liftosaur-ZeppOs-Companion/actions/workflows/ci.yml)
 
 ## Install the current beta
 
@@ -98,7 +98,9 @@ npm run build:all
 npm run clean
 ```
 
-CI runs `npm ci`, `npm test`, and synthetic Workout Extension generation on Node.js 24.
+The `.github/workflows/ci.yml` workflow defines PR checks for `npm ci`, `npm test`, and synthetic Workout Extension generation on Node.js 24. GitHub must have Actions enabled and the workflow available on the repository's default branch before those checks can run. The workflow uses the synthetic App ID `999999` only for offline generation; it does not build, preview, or deploy a watch app.
+
+For exact Zeus setup, build and preview commands, and physical-watch testing steps, see [Manual Build and Preview](docs/workout-extension-manual-actions.md).
 
 ## Documentation
 
