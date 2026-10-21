@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lifto Workout · Clean UI concept</title>
+  <style>
+    :root { color-scheme: dark; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #ececf0; color: #f9f8ff; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+    .page { width: min(100%, 760px); display: grid; justify-items: center; gap: 20px; }
+    .intro { color: #292735; text-align: center; max-width: 580px; }
+    .intro h1 { margin: 0 0 6px; font-size: 23px; }
+    .intro p { margin: 0; line-height: 1.45; font-size: 14px; }
+    .watch { width: min(94vw, 480px); aspect-ratio: 1; padding: 16px; border: 9px solid #222228; border-radius: 50%; background: #050508; box-shadow: 0 5px 0 #47474c inset, 0 20px 42px #15151a38; }
+    .screen { width: 100%; height: 100%; overflow: hidden; border-radius: 50%; background: #08080d; position: relative; }
+    .content { height: 100%; padding: 40px 39px 34px; display: flex; flex-direction: column; align-items: stretch; text-align: center; }
+    .eyebrow { color: #9b91ad; font-weight: 700; letter-spacing: .12em; font-size: 11px; text-transform: uppercase; }
+    .eyebrow strong { color: #ad83ff; }
+    h2 { margin: 14px 0 3px; font-size: clamp(22px, 5vw, 30px); line-height: 1.08; }
+    .subtle { color: #a9a4b6; }
+    .small { font-size: 13px; }
+    button { cursor: pointer; font: inherit; color: inherit; border: 0; touch-action: manipulation; }
+    button:focus-visible { outline: 3px solid #e8d7ff; outline-offset: 3px; }
+    button:disabled { cursor: default; opacity: .44; }
+    .icon-button { position: absolute; top: 53px; right: 72px; z-index: 2; width: 35px; height: 35px; border-radius: 50%; background: #282332; font-size: 20px; line-height: 1; }
+    .hero { margin: 24px 0 17px; font-size: clamp(29px, 7vw, 39px); font-weight: 800; letter-spacing: -.035em; white-space: nowrap; }
+    .hero span { color: #b389ff; font-size: .58em; font-weight: 600; letter-spacing: 0; }
+    .steppers { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+    .stepper { background: #1d1a25; border: 1px solid #393244; border-radius: 28px; height: 61px; display: grid; grid-template-columns: 39px 1fr 39px; align-items: center; }
+    .stepper button { height: 100%; background: transparent; color: #ae7cff; font-size: 28px; font-weight: 600; }
+    .stepper .value { color: #fff; font-size: 15px; font-weight: 700; white-space: nowrap; }
+    .stepper .value.fine { color: #cfb6ff; }
+    .hint { color: #8e879c; font-size: 11px; min-height: 18px; margin-top: 5px; }
+    .spacer { flex: 1; min-height: 7px; }
+    .primary { width: 100%; min-height: 57px; border-radius: 30px; background: #965df2; color: #fff; font-size: 16px; font-weight: 800; }
+    .primary:active { background: #7844d3; }
+    .secondary { min-height: 42px; padding: 0 17px; border-radius: 23px; background: #25212e; font-size: 13px; font-weight: 650; }
+    .footer-link { align-self: center; color: #bcb0d2; background: transparent; padding: 9px 15px; margin-top: 1px; font-size: 13px; }
+    .list-title { margin-top: 4px; font-size: 25px; }
+    .progress { margin: 3px 0 14px; font-size: 14px; }
+    .exercise-list { display: grid; gap: 8px; }
+    .exercise-row { width: 100%; min-height: 61px; border-radius: 18px; background: #1d1a25; border: 1px solid #302b3a; display: grid; grid-template-columns: 1fr auto; align-items: center; text-align: left; padding: 0 15px; }
+    .exercise-row.selected { border: 2px solid #9a6af0; background: #292139; }
+    .exercise-row strong { font-size: 15px; }
+    .exercise-row .count { color: #c5b8d8; font-size: 15px; }
+    .group-label { color: #b892f8; font-size: 11px; font-weight: 700; letter-spacing: .12em; text-align: left; padding-left: 10px; margin: 3px 0 -3px; }
+    .list-actions { display: flex; justify-content: center; gap: 8px; margin-top: 11px; }
+    .back { width: 70%; align-self: center; }
+    .rest-timer { margin: 14px 0 4px; font-size: clamp(70px, 18vw, 90px); letter-spacing: -.045em; line-height: 1; font-weight: 800; }
+    .rest-arc { width: 92%; height: 10px; border-radius: 10px; margin: 0 auto 3px; background: #282332; overflow: hidden; }
+    .rest-arc div { height: 100%; background: #9e68ef; transition: width 1s linear; }
+    .next { margin: 14px 0 3px; font-size: 15px; font-weight: 700; }
+    .rest-load { margin: 1px 0 12px; font-size: 20px; }
+    .dual { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .set-list { display: grid; gap: 6px; margin-top: 9px; text-align: left; }
+    .set-row { background: #1d1a25; border-radius: 13px; padding: 10px 12px; display: flex; justify-content: space-between; font-size: 13px; }
+    .set-row.done { color: #d9c9f8; }
+    .set-row button { background: transparent; color: #c49cff; font-size: 12px; }
+    .edit-controls { margin-top: 12px; }
+    .actions { display: flex; gap: 8px; justify-content: center; margin-top: 9px; }
+    .actions .secondary { min-height: 39px; }
+    .note { color: #514c5a; text-align: center; font-size: 13px; max-width: 550px; line-height: 1.4; }
+    @media (max-width: 430px) { .watch { padding: 11px; border-width: 7px; } .content { padding: 34px 30px 26px; } .icon-button { top: 43px; right: 59px; } .hero { margin: 17px 0 12px; } .stepper { height: 52px; grid-template-columns: 31px 1fr 31px; } .stepper .value { font-size: 13px; } .exercise-row { min-height: 53px; } .rest-timer { margin-top: 8px; } }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <div class="intro"><h1>Lifto Workout · clean UI concept</h1><p>A clickable design study for the separate branch. Tap inside the watch to try sets, exercise selection, rest, editing, and undo.</p></div>
+    <div class="watch"><div class="screen" id="screen" aria-live="polite"></div></div>
+    <div class="note">Prototype only. It does not connect to Liftosaur Cloud or control the watch or native Zepp workout.</div>
+  </main>
+  <script>
+    const exercises = [
+      { name: 'Bench Press', total: 4, group: null, weight: 60, reps: 8, done: [{ id: 1, weight: 60, reps: 8 }] },
+      { name: 'Cable Row', total: 3, group: 'A', weight: 45, reps: 10, done: [] },
+      { name: 'Squat', total: 4, group: 'A', weight: 80, reps: 6, done: [] },
+    ];
+    const initialView = new URLSearchParams(location.search).get('screen');
+    let selected = 0, view = ['active', 'exercises', 'rest', 'sets'].includes(initialView) ? initialView : 'active', previousView = 'active', fine = false, remaining = 84, restDuration = 90;
+    let paused = false, editId = null, editWeight = 0, editReps = 0, nextId = 2, finished = false, confirmUndo = false;
+    const screen = document.getElementById('screen');
+    const escapeHtml = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const current = () => exercises[selected];
+    const weightText = value => `${Number(value).toLocaleString('en-US', { maximumFractionDigits: 2 })} kg`;
+    const fmt = seconds => `${String(Math.floor(Math.max(0, seconds) / 60)).padStart(2, '0')}:${String(Math.max(0, seconds) % 60).padStart(2, '0')}`;
+    const shell = (inner, menu = true) => `${menu ? '<button class="icon-button" data-action="menu" aria-label="More options">···</button>' : ''}<div class="content">${inner}</div>`;
+    function show(name) { view = name; render(); }
+    function stepper(kind, value, change, label = '') { return `<div><div class="stepper"><button data-action="${kind}-minus" aria-label="Decrease ${kind}">−</button><button class="value ${kind === 'weight' && fine ? 'fine' : ''}" data-action="${kind}-value" aria-label="${kind === 'weight' ? 'Toggle fine weight adjustment' : kind}">${escapeHtml(value)}</button><button data-action="${kind}-plus" aria-label="Increase ${kind}">+</button></div><div class="hint">${escapeHtml(label)}</div></div>`; }
+    function renderActive() { const ex = current(); return shell(`<div class="eyebrow">STRENGTH · <strong>LIFTO</strong></div><h2>${escapeHtml(ex.name)}</h2><div class="subtle small">Set ${Math.min(ex.done.length + 1, ex.total)} of ${ex.total}${ex.group ? ` · Superset ${ex.group}` : ''}</div><div class="hero">${escapeHtml(weightText(ex.weight))} <span>×</span> ${ex.reps} <span>reps</span></div><div class="steppers">${stepper('weight', weightText(ex.weight), null, fine ? 'Fine step: 1.25 kg' : 'Tap weight for fine step')}${stepper('reps', `${ex.reps} reps`, null, '±1 rep')}</div><div class="spacer"></div><button class="primary" data-action="complete" ${ex.done.length >= ex.total ? 'disabled' : ''}>${ex.done.length >= ex.total ? 'ALL SETS DONE' : 'COMPLETE SET'}</button><button class="footer-link" data-action="exercises">☷ &nbsp; Exercises</button>`); }
+    function renderExercises() { const total = exercises.reduce((sum, ex) => sum + ex.done.length, 0); const planned = exercises.reduce((sum, ex) => sum + ex.total, 0); const rows = exercises.map((ex, i) => `${ex.group && (i === 0 || exercises[i-1].group !== ex.group) ? `<div class="group-label">SUPERSET ${ex.group}</div>` : ''}<button class="exercise-row ${i === selected ? 'selected' : ''}" data-action="select" data-index="${i}"><strong>${escapeHtml(ex.name)}</strong><span class="count">${ex.done.length}/${ex.total}</span></button>`).join(''); return shell(`<div class="eyebrow">LIFTO WORKOUT</div><h2 class="list-title">EXERCISES</h2><div class="progress subtle">${total} of ${planned} sets done</div><div class="exercise-list">${rows}</div><div class="spacer"></div><button class="secondary back" data-action="back">Back to set</button>`); }
+    function renderRest() { const ex = current(); return shell(`<div class="eyebrow"><strong>REST</strong></div><div class="rest-timer">${fmt(remaining)}</div><div class="rest-arc"><div style="width:${Math.max(0, Math.min(100, remaining / restDuration * 100))}%"></div></div><button class="footer-link" data-action="pause">${paused ? 'Resume timer' : 'Pause timer'}</button><div class="next">Next: ${escapeHtml(ex.name)} · Set ${Math.min(ex.done.length + 1, ex.total)}</div><div class="rest-load subtle">${escapeHtml(weightText(ex.weight))} × ${ex.reps} reps</div><div class="spacer"></div><div class="dual"><button class="secondary" data-action="start">Start set</button><button class="secondary" data-action="extend">+30s</button></div><button class="footer-link" data-action="exercises">☷ &nbsp; Exercises</button>`); }
+    function renderSets() { const ex = current(); const rows = Array.from({ length: ex.total }, (_, i) => { const done = ex.done[i]; return `<div class="set-row ${done ? 'done' : ''}"><span>Set ${i + 1}</span><span>${done ? `${escapeHtml(weightText(done.weight))} × ${done.reps}` : `${escapeHtml(weightText(ex.weight))} × ${ex.reps}`}</span>${done ? `<button data-action="edit" data-id="${done.id}">Edit</button>` : '<span class="subtle">Planned</span>'}</div>`; }).join(''); return shell(`<div class="eyebrow">EXERCISE SETS</div><h2 class="list-title">${escapeHtml(ex.name)}</h2><div class="progress subtle">${ex.done.length} of ${ex.total} done</div><div class="set-list">${rows}</div><div class="spacer"></div><button class="secondary back" data-action="back">Back to set</button>`); }
+    function renderEdit() { const record = current().done.find(x => x.id === editId); if (!record) return show('sets'); const latest = Math.max(...exercises.flatMap(x => x.done.map(d => d.id))); const undoAction = confirmUndo ? '<div class="actions"><button class="secondary" data-action="undo-cancel">Keep set</button><button class="secondary" data-action="undo-confirm">Undo set?</button></div>' : '<button class="footer-link" data-action="undo">Undo latest set</button>'; return shell(`<div class="eyebrow">EDIT COMPLETED SET</div><h2>${escapeHtml(current().name)}</h2><div class="subtle small">Set ${current().done.indexOf(record) + 1}</div><div class="hero">${escapeHtml(weightText(editWeight))} <span>×</span> ${editReps}</div><div class="steppers edit-controls">${stepper('edit-weight', weightText(editWeight), null, fine ? 'Fine step: 1.25 kg' : 'Tap weight for fine step')}${stepper('edit-reps', `${editReps} reps`, null, '±1 rep')}</div><div class="spacer"></div><div class="dual"><button class="secondary" data-action="cancel-edit">Cancel</button><button class="primary" data-action="save-edit">Save</button></div>${record.id === latest ? undoAction : '<div class="hint">Only the latest set can be undone</div>'}`, false); }
+    function renderMenu() { return shell(`<div class="eyebrow">LIFTO WORKOUT</div><h2>Session</h2><div class="progress subtle">Design prototype · local only</div><div class="exercise-list"><button class="exercise-row" data-action="exercises"><strong>Exercises and sets</strong><span>›</span></button><button class="exercise-row" data-action="finish"><strong>Finish Lifto session</strong><span>›</span></button></div><div class="spacer"></div><button class="secondary back" data-action="back">Back</button>`, false); }
+    function renderFinish() { return shell(`<div class="eyebrow">LIFTO WORKOUT</div><h2>${finished ? 'Session finished' : 'Finish session?'}</h2><p class="subtle small">${finished ? 'This prototype keeps no workout data.' : 'Finish the Liftosaur session only. Your native Zepp workout is separate.'}</p><div class="spacer"></div>${finished ? '<button class="primary" data-action="reset">Try again</button>' : '<div class="dual"><button class="secondary" data-action="back">Cancel</button><button class="primary" data-action="confirm-finish">Confirm</button></div>'}`, false); }
+    function render() { screen.innerHTML = ({ active: renderActive, exercises: renderExercises, rest: renderRest, sets: renderSets, edit: renderEdit, menu: renderMenu, finish: renderFinish })[view](); }
+    screen.addEventListener('click', event => { const target = event.target.closest('button[data-action]'); if (!target || target.disabled) return; const action = target.dataset.action; const ex = current();
+      if (action === 'menu') { previousView = view; return show('menu'); }
+      if (action === 'back') return show(view === 'sets' ? 'exercises' : view === 'menu' ? previousView : 'active');
+      if (action === 'exercises') return show('exercises');
+      if (action === 'select') { selected = Number(target.dataset.index); return show('sets'); }
+      if (action === 'weight-value' || action === 'edit-weight-value') { fine = !fine; return render(); }
+      if (action === 'weight-minus' || action === 'weight-plus') { ex.weight = Math.max(0, Math.round((ex.weight + (action.endsWith('plus') ? 1 : -1) * (fine ? 1.25 : 2.5)) * 100) / 100); return render(); }
+      if (action === 'reps-minus' || action === 'reps-plus') { ex.reps = Math.max(0, ex.reps + (action.endsWith('plus') ? 1 : -1)); return render(); }
+      if (action === 'complete') { ex.done.push({ id: nextId++, weight: ex.weight, reps: ex.reps }); remaining = restDuration; paused = false; return show('rest'); }
+      if (action === 'pause') { paused = !paused; return render(); }
+      if (action === 'extend') { remaining += 30; restDuration += 30; return render(); }
+      if (action === 'start') return show('active');
+      if (action === 'edit') { editId = Number(target.dataset.id); const record = ex.done.find(x => x.id === editId); editWeight = record.weight; editReps = record.reps; fine = false; confirmUndo = false; return show('edit'); }
+      if (action === 'edit-weight-minus' || action === 'edit-weight-plus') { editWeight = Math.max(0, Math.round((editWeight + (action.endsWith('plus') ? 1 : -1) * (fine ? 1.25 : 2.5)) * 100) / 100); return render(); }
+      if (action === 'edit-reps-minus' || action === 'edit-reps-plus') { editReps = Math.max(0, editReps + (action.endsWith('plus') ? 1 : -1)); return render(); }
+      if (action === 'cancel-edit') return show('sets');
+      if (action === 'save-edit') { const record = ex.done.find(x => x.id === editId); record.weight = editWeight; record.reps = editReps; return show('sets'); }
+      if (action === 'undo') { confirmUndo = true; return render(); }
+      if (action === 'undo-cancel') { confirmUndo = false; return render(); }
+      if (action === 'undo-confirm') { ex.done = ex.done.filter(x => x.id !== editId); confirmUndo = false; return show('sets'); }
+      if (action === 'finish') return show('finish');
+      if (action === 'confirm-finish') { finished = true; return render(); }
+      if (action === 'reset') location.reload();
+    });
+    setInterval(() => { if (view !== 'rest' || paused || remaining <= 0) return; remaining -= 1; const timer = screen.querySelector('.rest-timer'); const arc = screen.querySelector('.rest-arc div'); if (timer) timer.textContent = fmt(remaining); if (arc) arc.style.width = `${Math.max(0, Math.min(100, remaining / restDuration * 100))}%`; }, 1000);
+    render();
+  </script>
+</body>
+</html>
