@@ -21,9 +21,12 @@ function renderer(product, session, autoPrepare, storedPreferences = new Map()) 
     isRestMinimized: false, isWorkoutTimerControlsOpen: false, isNotesModalOpen: false,
     isEditLastSetOpen: false, lastSetDraft: null, isSyncDetailsOpen: false,
     isOverviewOpen: false, syncOverviewWorkout() {}, discardConfirmationRequested: false, phoneRequiredReason: null,
+    cleanFinishConfirmationRequested: false,
     directSync: {}, lastRenderedState: null, lastRenderedSecond: null,
     renderActiveSetScreen: view => rendered.push(view.rest ? 'Prepare' : 'Active'),
     renderRestScreen: () => rendered.push('Rest'),
+    renderCleanActiveSetScreen: view => rendered.push(view.rest ? 'Prepare' : 'Active'),
+    renderCleanRestScreen: () => rendered.push('Rest'),
     renderFinishedScreen: () => rendered.push('Finished'),
     renderTimedSetScreen: () => rendered.push('Timed'),
   };

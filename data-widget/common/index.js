@@ -121,6 +121,7 @@ const THEME = {
 };
 
 const OVERVIEW_SETS_PAGE_SIZE = 5;
+let cleanFinishConfirmationRequested = false;
 
 const DEFAULT_SCREEN_ON_SECONDS = 120;
 const ALWAYS_SCREEN_ON_MS = 1800000;
@@ -3603,7 +3604,203 @@ function renderUI() {
   workoutDiagnostics.record(WORKOUT_DIAGNOSTIC_CODES.RENDER_END);
 }
 
+// The clean screens intentionally share the controller, journal and sync paths with
+// the original renderer. They only replace the three primary workout views.
+function cleanText(text, x, y, w, h, role = 'caption', color = THEME.textPrimary) {
+  const label = addWidget(widget.TEXT, { x: px(x), y: px(y), w: px(w), h: px(h),
+    text, color, text_size: font(role), align_h: align.CENTER_H,
+    align_v: align.CENTER_V, text_style: text_style.NONE });
+  label?.setEnable?.(false);
+}
+
+function cleanButton(text, x, y, w, h, click, primary = false, diagnosticAction = null) {
+  addWidget(widget.BUTTON, { x: px(x), y: px(y), w: px(w), h: px(h),
+    radius: px(h / 2), normal_color: primary ? THEME.primary : THEME.card,
+    press_color: primary ? THEME.primaryDeep : THEME.cardActive,
+    color: THEME.textPrimary, text, text_size: font('caption'),
+    ...(diagnosticAction ? { diagnosticAction } : {}), click_func: click });
+}
+
+function renderCleanHeader(view, onMenu, label = 'LIFTO WORKOUT') {
+  cleanText(label, 158, 55, 205, 25, 'micro', THEME.primaryLight);
+  cleanButton(syncWarning ? '!' : '•••', 365, 51, 52, 38, onMenu, false, 'OPEN_MENU');
+  addLiveLabel('elapsed', { x: px(65), y: px(55), w: px(92), h: px(25),
+    text: formatSeconds(view.elapsedSeconds), color: view.isWorkoutPaused ? THEME.yellow : THEME.textSecondary,
+    text_size: font('micro'), align_h: align.CENTER_H, align_v: align.CENTER_V,
+    text_style: text_style.NONE, click_func: openWorkoutTimerControls });
+}
+
+function renderCleanActiveSetScreen(view) {
+  const isResting = view.state === SESSION_STATES.REST && view.rest;
+  const pending = view.pending;
+  const set = (isResting && pending ? pending.set : null) || view.currentSet;
+  const name = isResting && pending ? pending.exerciseName : view.exerciseName;
+  const setIndex = isResting && pending ? pending.setIndex : view.currentSetIndex;
+  const totalSets = isResting && pending ? pending.totalSets : view.totalSets;
+  const group = isResting && pending ? pending.supersetGroup : view.supersetGroup;
+  const equipment = isResting && pending ? pending.loadingEquipment : view.loadingEquipment;
+  if (!set) return;
+  renderCleanHeader(view, () => { isOverviewOpen = true; scheduleRenderUI(); }, 'STRENGTH · LIFTO');
+  cleanText(truncate(name, 22), 65, 103, 350, 38, 'title');
+  cleanText(`${formatActiveSetProgress(set, setIndex, totalSets)}${group ? ` · SS ${group}` : ''}`,
+    set.isWarmup ? 145 : 74, 142, set.isWarmup ? 261 : 332, 27,
+    'caption', group ? supersetColor(group) : THEME.textSecondary);
+  if (isResting) {
+    cleanText('REST', 160, 170, 78, 22, 'micro', THEME.textSecondary);
+    addLiveLabel('restValue', { x: px(240), y: px(170), w: px(96), h: px(22),
+      text: formatSeconds(view.rest.remaining), color: restStatusColor(view.rest),
+      text_size: font('micro'), align_h: align.CENTER_H, align_v: align.CENTER_V });
+  }
+  const weight = weightStepperDisplay(set.weight, view.unit,
+    formatLoadoutLabel(set.weight, equipment, view.unit, set.plates, set.targetWeight), false);
+  cleanText(`${weight.value} × ${formatEditableSetValue(set.reps, set.isAmrap)} reps`,
+    65, isResting ? 188 : 180, 350, isResting ? 37 : 45, 'title');
+
+  const step = (key, y, value, label, minus, plus, valueClick) => {
+    addWidget(widget.FILL_RECT, { x: px(65), y: px(y), w: px(350), h: px(58),
+      radius: px(24), color: THEME.card });
+    cleanButton('−', 68, y + 3, 58, 52, minus, false, `DECREASE_${key.toUpperCase()}`);
+    cleanButton('+', 354, y + 3, 58, 52, plus, false, `INCREASE_${key.toUpperCase()}`);
+    addLiveLabel(`${key}-value`, { x: px(132), y: px(y + 3), w: px(216), h: px(52),
+      text: value, color: THEME.textPrimary, text_size: font('caption'),
+      align_h: align.CENTER_H, align_v: align.CENTER_V, text_style: text_style.NONE,
+      ...(valueClick ? { click_func: valueClick, diagnosticAction: 'TOGGLE_FINE_WEIGHT' } : {}) });
+    cleanText(label, 120, y + 58, 240, 20, 'micro', THEME.textMuted);
+  };
+  step('weight', 225, weight.value, fineWeightStep ? 'Fine step' : 'Tap weight for fine step',
+    () => { workoutController.adjustWeight(fineWeightStep ? -0.5 : -1); scheduleRenderUI(); },
+    () => { workoutController.adjustWeight(fineWeightStep ? 0.5 : 1); scheduleRenderUI(); },
+    () => { fineWeightStep = !fineWeightStep; scheduleRenderUI(); });
+  step('reps', 297, formatEditableSetValue(set.reps, set.isAmrap), '±1 rep',
+    () => { workoutController.adjustReps(-1); scheduleRenderUI(); },
+    () => { workoutController.adjustReps(1); scheduleRenderUI(); });
+
+  if (set.isWarmup) cleanButton('Skip', 72, 139, 69, 33, () => {
+    const skipped = workoutController.skipWarmup();
+    controllerUiDirty = true;
+    if (skipped && workoutController.view().state === SESSION_STATES.FINISHED) submitWorkout();
+  });
+  const actionText = isResting ? 'START NEXT SET' : view.timedSet ? 'START SET' : 'COMPLETE SET';
+  cleanButton(actionText, 82, 383, 316, 45, () => {
+    const reason = checkRequiredPhoneInput(set);
+    if (reason) { phoneRequiredReason = reason; controllerUiDirty = true; return; }
+    if (isResting) {
+      restAlertTracker.reset(); stopVibration(); setRestPrepared(false);
+      if (view.timedSet) workoutController.startTimedSet();
+      else workoutController.nextSet();
+      controllerUiDirty = true;
+    } else if (view.timedSet) {
+      timedTargetAlerted = false;
+      workoutController.startTimedSet();
+      controllerUiDirty = true;
+    } else {
+      phoneRequiredReason = null;
+      workoutDiagnostics.record(WORKOUT_DIAGNOSTIC_CODES.SET_TAP);
+      workoutController.completeSet({ repsLeft: set.isUnilateral ? set.reps : null });
+      workoutDiagnostics.record(WORKOUT_DIAGNOSTIC_CODES.SET_SAVED);
+      syncCompletedSets();
+      if (workoutController.view().state === SESSION_STATES.FINISHED) submitWorkout();
+    }
+  }, true, isResting || view.timedSet ? 'START_SET' : 'COMPLETE_SET');
+}
+
+function renderCleanRestScreen(view) {
+  const rest = view.rest;
+  renderCleanHeader(view, () => { isOverviewOpen = true; scheduleRenderUI(); }, 'REST');
+  const color = rest.isOvertime ? THEME.error : rest.isPaused ? THEME.yellow : THEME.primaryPale;
+  addLiveLabel('restLabel', { x: px(80), y: px(98), w: px(320), h: px(30),
+    text: rest.isPaused ? 'Paused' : rest.isOvertime ? 'Overtime' : 'Rest timer',
+    color, text_size: font('caption'), align_h: align.CENTER_H, align_v: align.CENTER_V });
+  addLiveButton('restValue', { x: px(75), y: px(130), w: px(330), h: px(83),
+    text: formatSeconds(rest.remaining), color, normal_color: THEME.bg,
+    press_color: THEME.primaryDark, text_size: font('timer'), radius: px(12),
+    click_func: openWorkoutTimerControls });
+  const fraction = rest.duration > 0 ? Math.max(0, Math.min(1, rest.remaining / rest.duration)) : 0;
+  addWidget(widget.FILL_RECT, { x: px(102), y: px(221), w: px(276), h: px(8), radius: px(4), color: THEME.card });
+  if (fraction > 0) addLiveShape('restProgress', { x: px(102), y: px(221),
+    w: px(Math.max(8, 276 * fraction)), h: px(8), radius: px(4), color: THEME.primaryLight });
+  addLiveButton('restPause', { x: px(158), y: px(239), w: px(164), h: px(37),
+    radius: px(18), normal_color: THEME.card, press_color: THEME.cardActive,
+    text: rest.isWorkoutPaused ? 'Zepp paused' : rest.isPaused ? 'Resume' : 'Pause',
+    color: THEME.textPrimary, text_size: font('caption'),
+    diagnosticAction: rest.isPaused ? 'RESUME' : 'PAUSE',
+    click_func: () => { if (!workoutController.view().rest?.isWorkoutPaused) workoutController.toggleRestPause(); } });
+  if (rest.nextExerciseName) {
+    cleanText(`NEXT · ${truncate(rest.nextExerciseName, 23)}`, 65, 287, 350, 26, 'caption');
+    cleanText(formatNextTargetSummary(rest), 65, 315, 350, 31, 'title', THEME.primaryLight);
+  }
+  cleanButton('−10s', 83, 349, 96, 38,
+    () => { workoutController.adjustRest(-10); scheduleRenderUI(); });
+  cleanButton('+30s', 301, 349, 96, 38,
+    () => { workoutController.adjustRest(30); scheduleRenderUI(); });
+  cleanButton('START NEXT SET', 82, 394, 316, 42, () => {
+    const reason = view.timedSet && checkRequiredPhoneInput(view.pending?.set || view.currentSet);
+    if (reason) { phoneRequiredReason = reason; controllerUiDirty = true; return; }
+    restAlertTracker.reset(); stopVibration(); setRestPrepared(false);
+    if (view.timedSet) workoutController.startTimedSet();
+    else workoutController.nextSet();
+    scheduleRenderUI();
+  }, true, 'START_SET');
+}
+
+function renderCleanOverviewScreen(view) {
+  if (selectedOverviewExerciseIndex !== null) {
+    return renderExerciseSetsScreen(view, view.overviewExercises[selectedOverviewExerciseIndex]);
+  }
+  renderCleanHeader(view, () => { isOverviewOpen = false; scheduleRenderUI(); }, 'LIFTO WORKOUT');
+  cleanText('EXERCISES', 75, 95, 330, 36, 'title');
+  const all = view.overviewExercises || [];
+  const progress = workoutProgress(all);
+  cleanText(`${progress.completed} of ${progress.total} sets done`, 75, 128, 330, 24,
+    'caption', THEME.textSecondary);
+  const totalPages = Math.max(1, Math.ceil(all.length / OVERVIEW_PAGE_SIZE));
+  overviewPage = Math.min(Math.max(overviewPage, 0), totalPages - 1);
+  const start = overviewPage * OVERVIEW_PAGE_SIZE;
+  all.slice(start, start + OVERVIEW_PAGE_SIZE).forEach((ex, i) => {
+    const idx = start + i;
+    const current = idx === (view.state === SESSION_STATES.REST
+      ? view.pending?.exerciseIndex ?? view.currentExerciseIndex : view.currentExerciseIndex);
+    const y = 163 + i * 69;
+    addWidget(widget.BUTTON, { x: px(65), y: px(y), w: px(350), h: px(61),
+      radius: px(18), normal_color: current ? THEME.primaryDark : THEME.card,
+      press_color: THEME.cardActive, text: '', diagnosticAction: 'SELECT_EXERCISE',
+      click_func: () => { selectedOverviewExerciseIndex = idx; overviewSetsPage = 0; scheduleRenderUI(); } });
+    cleanText(truncate(ex.name, 20), 83, y + 4, 251, 28, 'caption',
+      ex.supersetGroup ? supersetColor(ex.supersetGroup) : THEME.textPrimary);
+    cleanText(`${ex.completedSetsCount}/${ex.totalSets}`, 335, y + 7, 59, 26,
+      'caption', THEME.textSecondary);
+    if (ex.supersetGroup) cleanText(`SUPERSET ${ex.supersetGroup}`, 83, y + 32, 180, 21,
+      'micro', THEME.primaryLight);
+  });
+  if (totalPages > 1) {
+    cleanButton('‹', 154, 370, 48, 32, () => { overviewPage = (overviewPage - 1 + totalPages) % totalPages; scheduleRenderUI(); });
+    cleanText(`${overviewPage + 1}/${totalPages}`, 210, 370, 60, 32, 'micro', THEME.textSecondary);
+    cleanButton('›', 278, 370, 48, 32, () => { overviewPage = (overviewPage + 1) % totalPages; scheduleRenderUI(); });
+  }
+  cleanButton('Back', 79, 402, 150, 39,
+    () => { isOverviewOpen = false; scheduleRenderUI(); });
+  cleanButton('Finish Lifto', 248, 402, 153, 39,
+    () => { cleanFinishConfirmationRequested = true; scheduleRenderUI(); }, true, 'FINISH_WORKOUT');
+}
+
+function renderCleanFinishConfirmation() {
+  cleanText('FINISH LIFTO SESSION?', 70, 110, 340, 42, 'title');
+  cleanText('Your Zepp workout continues separately.', 73, 169, 334, 54,
+    'caption', THEME.textSecondary);
+  cleanButton('Cancel', 76, 301, 152, 58,
+    () => { cleanFinishConfirmationRequested = false; scheduleRenderUI(); });
+  cleanButton('Confirm', 250, 301, 152, 58, () => {
+    cleanFinishConfirmationRequested = false;
+    isOverviewOpen = false;
+    workoutController.finishWorkout();
+    submitWorkout();
+  }, true, 'FINISH_WORKOUT');
+}
+
 function renderScreen() {
+  if (typeof cleanFinishConfirmationRequested !== 'undefined' && cleanFinishConfirmationRequested) {
+    return renderCleanFinishConfirmation();
+  }
   if (isEditLastSetOpen) {
     if (lastSetDraft) return renderEditLastSetScreen();
     isEditLastSetOpen = false;
@@ -3651,12 +3848,12 @@ function renderScreen() {
     return renderProgramsScreen();
   }
   if (view.state === SESSION_STATES.READY) return renderReadyScreen(view);
-  if (isOverviewOpen && view.state !== SESSION_STATES.FINISHED) return renderOverviewScreen(view);
+  if (isOverviewOpen && view.state !== SESSION_STATES.FINISHED) return renderCleanOverviewScreen(view);
   if (view.timedSet && view.timedSet.phase !== 'READY' && view.timedSet.phase !== 'REST') return renderTimedSetScreen(view);
-  if (view.state === SESSION_STATES.ACTIVE_SET) return renderActiveSetScreen(view);
+  if (view.state === SESSION_STATES.ACTIVE_SET) return renderCleanActiveSetScreen(view);
   if (view.state === SESSION_STATES.REST) {
-    if (isRestMinimized) return renderActiveSetScreen(view);
-    return renderRestScreen(view);
+    if (isRestMinimized) return renderCleanActiveSetScreen(view);
+    return renderCleanRestScreen(view);
   }
   return renderFinishedScreen(view);
 }
@@ -4019,6 +4216,11 @@ function tick() {
 
       updateLiveWidget('restLabel', { text: labelText, color: labelColor });
       updateLiveWidget('restValue', { text: formatSeconds(view.rest.remaining), color: restColor });
+      if (liveWidgets.restProgress) {
+        const fraction = view.rest.duration > 0
+          ? Math.max(0, Math.min(1, view.rest.remaining / view.rest.duration)) : 0;
+        updateLiveWidget('restProgress', { w: px(Math.max(8, 276 * fraction)) });
+      }
       updateLiveWidget('actionButton', {
         text: view.timedSet?.phase === 'REST' ? 'Armed' : `> Start set ${formatSeconds(view.rest.remaining)}`,
       });
@@ -4061,6 +4263,7 @@ function stopClock() {
 DataWidget(
   BasePage({
     onInit() {
+      cleanFinishConfirmationRequested = false;
       isSyncDetailsOpen = false;
       isEditLastSetOpen = false;
       lastSetDraft = null;

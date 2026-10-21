@@ -1,10 +1,10 @@
 # Clean Workout UI exploration
 
-This branch explores a simpler touch-first UI for **Lifto Workout**, the Workout Extension inside Zepp's native Strength Training activity. It starts at PR #4 (`aa02a73`) and leaves that branch and `main` intact.
+This branch explores a simpler touch-first UI for **Lifto Workout**, the Workout Extension inside Zepp's native Strength Training activity. It starts at PR #4 (`aa02a73`) and leaves that branch and `main` intact. The approved design is implemented in the Workout Extension's active set, rest, and exercise overview screens in `data-widget/common/index.js`. The standalone Companion UI remains unchanged.
 
 Open [prototype.html](prototype.html) in a browser to try the interaction flow. The prototype simulates set entry, exercise selection, rest, editing, latest-only undo, and finish confirmation. It does not run on a watch or synchronize with Liftosaur Cloud.
 
-The three images are visual references, not verified Balance 2 layouts:
+The three images are visual references. The native implementation still needs visual and touch verification on Balance 2:
 
 | Screen | Reference | Primary action |
 | --- | --- | --- |
@@ -25,4 +25,6 @@ The three images are visual references, not verified Balance 2 layouts:
 
 ## Hardware and installation boundary
 
-The images are not a compatibility result. Verify layout and touch targets on the physical Balance 2, recording model, firmware, and Zepp OS version. A build using the existing App ID `1132171` would replace the currently installed preview on the watch. To keep both versions installed for side-by-side testing, register a separate Workout Extension App ID and pass it through `ZEPP_WORKOUT_EXTENSION_APP_ID`; do not commit a personal ID.
+The images and successful Zeus build are not a compatibility result. Verify layout, touch targets, and the Workout Extension launch path on the physical Balance 2, recording model, firmware, and Zepp OS version. A preview using the existing App ID `1132171` would replace the currently installed PR #4 version on the watch. To keep both versions installed for side-by-side testing, register a separate Workout Extension App ID and pass it through `ZEPP_WORKOUT_EXTENSION_APP_ID`; do not commit a personal ID.
+
+Run `npm ci`, `npm test`, and `ZEPP_WORKOUT_EXTENSION_APP_ID=<your extension ID> npm run build:workout` from this branch. The clean screens reuse the PR #4 controller and journal. Editing completed sets, latest-only undo, Cloud sync, and secondary timer controls remain accessible through their existing screens.
