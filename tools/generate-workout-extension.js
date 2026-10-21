@@ -3,6 +3,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createWorkoutExtensionManifest } from '../shared/workout-extension-manifest.js';
 
+// This design branch updates the Workout Extension independently of the
+// unchanged Companion release and the PR #4 preview already on the watch.
+const CLEAN_WORKOUT_VERSION = Object.freeze({ name: '0.5.15', code: 51 });
+
 export function parseWorkoutExtensionAppId(appIdInput = process.env.ZEPP_WORKOUT_EXTENSION_APP_ID) {
   if (appIdInput === undefined || appIdInput === null || appIdInput === '') {
     throw new Error('Missing or invalid Workout Extension App ID: ZEPP_WORKOUT_EXTENSION_APP_ID must be set');
@@ -60,10 +64,9 @@ export function generateWorkoutExtensionProject({
   const resolvedTargetDir = targetDir || path.join(resolvedRootDir, 'build', 'workout-extension');
 
   const rootPkg = JSON.parse(fs.readFileSync(path.join(resolvedRootDir, 'package.json'), 'utf8'));
-  const rootAppJson = JSON.parse(fs.readFileSync(path.join(resolvedRootDir, 'app.json'), 'utf8'));
 
-  const version = rootPkg.version;
-  const versionCode = rootAppJson.app?.version?.code;
+  const version = CLEAN_WORKOUT_VERSION.name;
+  const versionCode = CLEAN_WORKOUT_VERSION.code;
 
   const manifest = createWorkoutExtensionManifest({
     appId: parsedAppId,

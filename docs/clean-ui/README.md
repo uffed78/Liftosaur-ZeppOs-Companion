@@ -28,3 +28,5 @@ The three images are visual references. The native implementation still needs vi
 The images and successful Zeus build are not a compatibility result. Verify layout, touch targets, and the Workout Extension launch path on the physical Balance 2, recording model, firmware, and Zepp OS version. A preview using the existing App ID `1132171` would replace the currently installed PR #4 version on the watch. To keep both versions installed for side-by-side testing, register a separate Workout Extension App ID and pass it through `ZEPP_WORKOUT_EXTENSION_APP_ID`; do not commit a personal ID.
 
 Run `npm ci`, `npm test`, and `ZEPP_WORKOUT_EXTENSION_APP_ID=<your extension ID> npm run build:workout` from this branch. The clean screens reuse the PR #4 controller and journal. Editing completed sets, latest-only undo, Cloud sync, and secondary timer controls remain accessible through their existing screens.
+
+This branch generates Workout Extension version `0.5.15` (version code `51`) so Zepp can update the installed PR #4 preview (`0.5.14`, code `50`) under the same App ID. The Companion release metadata remains at `0.5.14`.

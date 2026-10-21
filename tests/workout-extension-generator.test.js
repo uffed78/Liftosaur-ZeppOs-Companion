@@ -46,6 +46,7 @@ test('generates a complete Workout Extension project in target directory', () =>
     const appJson = JSON.parse(fs.readFileSync(appJsonPath, 'utf8'));
 
     assert.equal(appJson.app.appId, 987654);
+    assert.deepEqual(appJson.app.version, { code: 51, name: '0.5.15' });
     assert.equal(appJson.app.extType, 'workout');
     assert.equal(appJson.runtime.apiVersion.minVersion, '3.6');
     assert.deepEqual(appJson.permissions, [
