@@ -58,6 +58,7 @@ export function createWorkoutSession({
   plan = null,
   initialJournal = [],
   resumeFromEntryId = null,
+  manualFinishAfterLastSet = false,
 } = {}) {
   const unit = plan?.unit || 'kg';
   const step = weightStepFor(unit);
@@ -232,7 +233,7 @@ export function createWorkoutSession({
         : (anchorIndex + 1) % exercises.length;
     const firstPending = findServerResumeExerciseIndex(resumeIndex);
     if (firstPending === -1) {
-      state = SESSION_STATES.FINISHED;
+      state = manualFinishAfterLastSet ? SESSION_STATES.ACTIVE_SET : SESSION_STATES.FINISHED;
       currentExerciseIndex = Math.max(0, exercises.length - 1);
     } else {
       state = SESSION_STATES.ACTIVE_SET;
@@ -528,9 +529,11 @@ export function createWorkoutSession({
         selectedPendingExerciseIndex = null;
 
         if (allSetsDone()) {
-          clearPauses(event.timestamp);
-          state = SESSION_STATES.FINISHED;
-          workoutEndTime = event.timestamp;
+          if (!manualFinishAfterLastSet) {
+            clearPauses(event.timestamp);
+            state = SESSION_STATES.FINISHED;
+            workoutEndTime = event.timestamp;
+          }
           restInfo = null;
           break;
         }
@@ -598,9 +601,11 @@ export function createWorkoutSession({
 
         if (!removesPending) break;
         if (allSetsDone()) {
-          clearPauses(event.timestamp);
-          state = SESSION_STATES.FINISHED;
-          workoutEndTime = event.timestamp;
+          if (!manualFinishAfterLastSet) {
+            clearPauses(event.timestamp);
+            state = SESSION_STATES.FINISHED;
+            workoutEndTime = event.timestamp;
+          }
           restInfo = null;
           selectedPendingExerciseIndex = null;
           break;
@@ -884,10 +889,12 @@ export function createWorkoutSession({
       : findNextExerciseIndex(currentExerciseIndex);
     selectedPendingExerciseIndex = null;
     if (nextIdx === -1) {
-      state = SESSION_STATES.FINISHED;
-      if (Number.isFinite(timestamp)) {
-        clearPauses(timestamp);
-        workoutEndTime = timestamp;
+      if (!manualFinishAfterLastSet) {
+        state = SESSION_STATES.FINISHED;
+        if (Number.isFinite(timestamp)) {
+          clearPauses(timestamp);
+          workoutEndTime = timestamp;
+        }
       }
       return;
     }

@@ -1676,6 +1676,36 @@ function directControllerOptions(overrides = {}) {
   };
 }
 
+test('manual finish mode keeps the final set editable through restore until confirmation', () => {
+  const store = createSessionStore(createMemoryStorageAdapter());
+  const plan = {
+    programId: 'minimal-finish', source: 'WORKOUT_API', unit: 'kg',
+    exercises: [{ index: 1, name: 'Squat', sets: [
+      { index: 1, setId: 'squat-1', targetReps: 5, targetWeight: 80, restSeconds: 60 },
+    ] }],
+  };
+  const controller = createWorkoutController({ store, now: () => 1000,
+    manualFinishAfterLastSet: true });
+  controller.loadPlan(plan, { persist: true });
+  controller.startWorkout();
+  controller.completeSet();
+
+  assert.equal(controller.view().state, SESSION_STATES.ACTIVE_SET);
+  assert.equal(controller.view().totalCompletedSetsCount, 1);
+  assert.equal(controller.view().endedAt, null);
+  const restored = createWorkoutController({ store, now: () => 2000,
+    manualFinishAfterLastSet: true });
+  assert.equal(restored.restore().success, true);
+  assert.equal(restored.view().state, SESSION_STATES.ACTIVE_SET);
+  const draft = restored.createSetCorrectionDraft('squat-1');
+  assert.equal(draft.success, true);
+  draft.draft.reps = 6;
+  assert.equal(restored.saveSetCorrection(draft.draft).success, true);
+  assert.equal(restored.view().allCompletedSets[0].reps, 6);
+  restored.finishWorkout();
+  assert.equal(restored.view().state, SESSION_STATES.FINISHED);
+});
+
 test('late poll response cannot replace a finished session', async () => {
   let resolvePoll;
   const controller = createWorkoutController(directControllerOptions({

@@ -1,32 +1,19 @@
-# Clean Workout UI exploration
+# Minimal Workout UI
 
-This branch explores a simpler touch-first UI for **Lifto Workout**, the Workout Extension inside Zepp's native Strength Training activity. It starts at PR #4 (`aa02a73`) and leaves that branch and `main` intact. The approved design is implemented in the Workout Extension's active set, rest, and exercise overview screens in `data-widget/common/index.js`. The standalone Companion UI remains unchanged.
+This isolated branch implements the approved minimal, touch-first UI for **Lifto Workout**, the Workout Extension inside Zepp's native Strength Training activity. PR #4, `main`, and the standalone Companion UI are unchanged. The earlier [prototype](prototype.html) remains a design reference; the native screens are in `data-widget/common/index.js`.
 
-Open [prototype.html](prototype.html) in a browser to try the interaction flow. The prototype simulates set entry, exercise selection, rest, editing, latest-only undo, and finish confirmation. It does not run on a watch or synchronize with Liftosaur Cloud.
+## Flow
 
-The three images are visual references. The native implementation still needs visual and touch verification on Balance 2:
+1. The active screen shows only the exercise, set position, target weight/reps, an exercise-list button, and **SET KLART**.
+2. Completing a set opens a large rest timer when rest is planned. The completed reps and weight are tappable there. Without planned rest, a brief result screen offers the same actions.
+3. Each correction screen changes one value at a time. Reps move by one; weight uses the existing normal step (2.5 kg for kg plans) and a fine-step toggle. Save and latest-only undo use the existing controller and offline journal.
+4. The exercise list lets the user select any unfinished exercise directly. The detail button beside each exercise shows all its sets, with direct editing of completed sets where a stable ID and Workout API permit it. Superset membership remains visible.
+5. After the final set, Lifto stays open for correction. The user must explicitly confirm **Avsluta Lifto**. This finishes only the Liftosaur session; Zepp's native workout continues independently.
 
-| Screen | Reference | Primary action |
-| --- | --- | --- |
-| Active set | [active-set.png](active-set.png) | Adjust weight/reps, then complete the set |
-| Exercise list | [exercises.png](exercises.png) | Select an exercise in any order |
-| Rest | [rest.png](rest.png) | Watch the countdown, adjust rest, or start the next set |
+All primary actions have visible touch targets. Crown and swipe are not required. The screens reuse the PR #4 persistence and ordered Cloud sync paths. Imported or ID-less completions are shown but cannot be edited when the controller cannot identify them safely.
 
-## Interaction requirements
+## Build and watch check
 
-- Every core action has a visible touch target. Crown and swipe input are optional and must not be required.
-- Keep the active set focused on exercise name, set position, weight, reps, and one primary action.
-- Use 2.5 kg as the normal weight step, with a visible way to switch to a finer step; reps change by one.
-- Show all planned and completed sets after tapping an exercise. Preserve stable-ID editing and latest-only undo from PR #4.
-- Show supersets as related rows without forcing a fixed exercise order.
-- Give the rest countdown most of its screen. Keep access to the next set and timer controls.
-- Preserve the offline journal, ordered/idempotent Cloud sync, confirmation before ending the Liftosaur session, and native Zepp workout ownership.
-- Do not add workout analytics, images, plate calculation, program editing, or RPE controls to the primary workout screens.
+Run `npm ci`, `npm test`, then `ZEPP_WORKOUT_EXTENSION_APP_ID=<your extension ID> npm run build:workout`. The generated Workout Extension has version `0.5.16` (code `52`) so a preview under the same App ID updates the earlier `0.5.15` (code `51`) build. The personal App ID stays in the environment, not the repository. The Companion release metadata remains at `0.5.14`.
 
-## Hardware and installation boundary
-
-The images and successful Zeus build are not a compatibility result. Verify layout, touch targets, and the Workout Extension launch path on the physical Balance 2, recording model, firmware, and Zepp OS version. A preview using the existing App ID `1132171` would replace the currently installed PR #4 version on the watch. To keep both versions installed for side-by-side testing, register a separate Workout Extension App ID and pass it through `ZEPP_WORKOUT_EXTENSION_APP_ID`; do not commit a personal ID.
-
-Run `npm ci`, `npm test`, and `ZEPP_WORKOUT_EXTENSION_APP_ID=<your extension ID> npm run build:workout` from this branch. The clean screens reuse the PR #4 controller and journal. Editing completed sets, latest-only undo, Cloud sync, and secondary timer controls remain accessible through their existing screens.
-
-This branch generates Workout Extension version `0.5.15` (version code `51`) so Zepp can update the installed PR #4 preview (`0.5.14`, code `50`) under the same App ID. The Companion release metadata remains at `0.5.14`.
+Check the layout, touch targets, exercise switching, corrections, undo, supersets, rest, offline recovery, and Cloud sync on the physical Balance 2. The Zeus build and preview alone do not verify those interactions on the watch.

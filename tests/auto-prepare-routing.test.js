@@ -27,6 +27,11 @@ function renderer(product, session, autoPrepare, storedPreferences = new Map()) 
     renderRestScreen: () => rendered.push('Rest'),
     renderCleanActiveSetScreen: view => rendered.push(view.rest ? 'Prepare' : 'Active'),
     renderCleanRestScreen: () => rendered.push('Rest'),
+    renderCleanAllSetsDoneScreen: () => rendered.push('Done'),
+    renderCleanNoRestReviewScreen: () => rendered.push('Review'),
+    cleanReviewSetId: null,
+    workoutProgress: exercises => ({ total: exercises?.reduce((sum, ex) => sum + ex.totalSets, 0) || 0,
+      completed: exercises?.reduce((sum, ex) => sum + ex.completedSetsCount, 0) || 0 }),
     renderFinishedScreen: () => rendered.push('Finished'),
     renderTimedSetScreen: () => rendered.push('Timed'),
   };
@@ -64,7 +69,9 @@ for (const product of ['page', 'data-widget']) {
     env.renderScreen();
     session.completeSet({ timestamp: 3_000 });
     env.renderScreen();
-    assert.deepEqual(rendered, ['Active', 'Prepare', 'Rest', 'Active', 'Prepare']);
+    assert.deepEqual(rendered, product === 'data-widget'
+      ? ['Active', 'Rest', 'Rest', 'Active', 'Rest']
+      : ['Active', 'Prepare', 'Rest', 'Active', 'Prepare']);
   });
 
   test(`${product}: disabled Auto prepare retains the detailed rest screen`, () => {
@@ -87,7 +94,7 @@ for (const product of ['page', 'data-widget']) {
     const { env, rendered } = renderer(product, session, undefined,
       new Map([['liftosaur.autoPrepare', true]]));
     env.renderScreen();
-    assert.deepEqual(rendered, ['Prepare']);
+    assert.deepEqual(rendered, [product === 'data-widget' ? 'Rest' : 'Prepare']);
   });
 }
 

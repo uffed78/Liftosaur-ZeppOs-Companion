@@ -111,9 +111,10 @@ export function createWorkoutController({
   mapWorkout = workoutToDayPlan,
   refreshPolicy = null,
   onStatus = null,
+  manualFinishAfterLastSet = false,
 } = {}) {
   let dayPlan = null;
-  let session = createWorkoutSession({ plan: null });
+  let session = createWorkoutSession({ plan: null, manualFinishAfterLastSet });
   let directSync = defaultDirectSync('LEGACY');
   let currentStatus = { code: SYNC_STATUS_CODES.IDLE, detail: null, error: null };
   const policy = refreshPolicy || createWorkoutRefreshPolicy({ now });
@@ -450,6 +451,7 @@ export function createWorkoutController({
       plan: dayPlan,
       resumeFromEntryId,
       initialJournal: [...(localState?.skippedWarmups || []), ...completionJournal],
+      manualFinishAfterLastSet,
     });
     sessionGeneration += 1;
     restoreAdoptionState(localState, { preserveNavigation });
@@ -583,7 +585,7 @@ export function createWorkoutController({
   ) {
     if (disposed) return;
     dayPlan = plan;
-    session = createWorkoutSession({ plan: dayPlan, resumeFromEntryId });
+    session = createWorkoutSession({ plan: dayPlan, resumeFromEntryId, manualFinishAfterLastSet });
     sessionGeneration += 1;
     workoutGeneration += 1;
     const defaultMode = plan?.source === 'WORKOUT_API' ? 'DIRECT' : 'LEGACY';
@@ -616,6 +618,7 @@ export function createWorkoutController({
       restoredSession = createWorkoutSession({
         plan: snapshot.plan,
         initialJournal: snapshot.journal,
+        manualFinishAfterLastSet,
       });
     } catch (err) {
       logError('restore session failed', err);
@@ -688,7 +691,8 @@ export function createWorkoutController({
     dayPlan = newPlan;
     deferredServerWorkout = null;
     lastServerWorkoutSignature = null;
-    session = createWorkoutSession({ plan: dayPlan, resumeFromEntryId: resolvedResume, initialJournal: completionJournal });
+    session = createWorkoutSession({ plan: dayPlan, resumeFromEntryId: resolvedResume,
+      initialJournal: completionJournal, manualFinishAfterLastSet });
     sessionGeneration += 1;
     workoutGeneration += 1;
     directSync = normalizeDirectSync({
@@ -710,7 +714,7 @@ export function createWorkoutController({
     }
     saveFailing = false;
     session.cancelWorkout({ timestamp: now() });
-    session = createWorkoutSession({ plan: null });
+    session = createWorkoutSession({ plan: null, manualFinishAfterLastSet });
     sessionGeneration += 1;
     workoutGeneration += 1;
     dayPlan = null;
@@ -778,7 +782,7 @@ export function createWorkoutController({
     // Rebind only identity: replay against unchanged targets to preserve local edits,
     // navigation and absolute timers. The normal drain adopts targets after acknowledgement.
     const plan = { ...dayPlan, exercises };
-    const reboundSession = createWorkoutSession({ plan, initialJournal: journal });
+    const reboundSession = createWorkoutSession({ plan, initialJournal: journal, manualFinishAfterLastSet });
     dayPlan = plan;
     session = reboundSession;
     sessionGeneration += 1;

@@ -152,6 +152,7 @@ function syncOverviewWorkout(view) {
   if (overviewWorkoutIdentity !== identity) {
     selectedOverviewExerciseIndex = null;
     overviewSetsPage = 0;
+    cleanReviewSetId = null;
     overviewWorkoutIdentity = identity;
   }
   if (!isOverviewOpen) {
@@ -353,6 +354,8 @@ let restPresentation = createRestPresentationState();
 let isWorkoutTimerControlsOpen = false;
 let isSyncDetailsOpen = false;
 let isEditLastSetOpen = false;
+let cleanEditField = 'reps';
+let cleanReviewSetId = null;
 let lastSetDraft = null;
 let lastSetEditError = null;
 let phoneRequiredReason = null;
@@ -2534,7 +2537,7 @@ function closeSyncDetailsModal() {
   scheduleRenderUI();
 }
 
-function startEditLastSet() {
+function startEditLastSet(field = 'reps') {
   if (isTearingDown || isPaused) return;
   const draftResult = workoutController?.createLastSetDraft?.();
   if (!draftResult || !draftResult.success || !draftResult.draft) {
@@ -2544,13 +2547,14 @@ function startEditLastSet() {
   }
   lastSetEditError = null;
   lastSetDraft = draftResult.draft;
+  cleanEditField = field;
   isSyncDetailsOpen = false;
   isEditLastSetOpen = true;
   controllerUiDirty = true;
   scheduleRenderUI();
 }
 
-function startEditSet(setId) {
+function startEditSet(setId, field = 'reps') {
   if (isTearingDown || isPaused) return;
   const draftResult = workoutController?.createSetCorrectionDraft?.(setId);
   if (!draftResult || !draftResult.success || !draftResult.draft) {
@@ -2560,6 +2564,7 @@ function startEditSet(setId) {
   }
   lastSetEditError = null;
   lastSetDraft = draftResult.draft;
+  cleanEditField = field;
   isSyncDetailsOpen = false;
   isEditLastSetOpen = true;
   controllerUiDirty = true;
@@ -2570,6 +2575,7 @@ function cancelEditLastSet() {
   if (isTearingDown || isPaused) return;
   isEditLastSetOpen = false;
   lastSetDraft = null;
+  cleanEditField = 'reps';
   lastSetEditError = null;
   controllerUiDirty = true;
   scheduleRenderUI();
@@ -2588,6 +2594,7 @@ function saveEditLastSet() {
   lastSetEditError = null;
   isEditLastSetOpen = false;
   lastSetDraft = null;
+  cleanEditField = 'reps';
   controllerUiDirty = true;
   scheduleRenderUI();
 }
@@ -2604,6 +2611,7 @@ function undoEditedSet() {
   lastSetEditError = null;
   isEditLastSetOpen = false;
   lastSetDraft = null;
+  cleanEditField = 'reps';
   controllerUiDirty = true;
   scheduleRenderUI();
 }
@@ -3606,19 +3614,57 @@ function renderUI() {
 
 // The clean screens intentionally share the controller, journal and sync paths with
 // the original renderer. They only replace the three primary workout views.
-function cleanText(text, x, y, w, h, role = 'caption', color = THEME.textPrimary) {
+function cleanText(text, x, y, w, h, role = 'caption', color = THEME.textPrimary,
+  alignH = align.CENTER_H) {
   const label = addWidget(widget.TEXT, { x: px(x), y: px(y), w: px(w), h: px(h),
-    text, color, text_size: font(role), align_h: align.CENTER_H,
+    text, color, text_size: font(role), align_h: alignH,
     align_v: align.CENTER_V, text_style: text_style.NONE });
   label?.setEnable?.(false);
 }
 
-function cleanButton(text, x, y, w, h, click, primary = false, diagnosticAction = null) {
+function cleanButton(text, x, y, w, h, click, primary = false, diagnosticAction = null, role = 'caption') {
   addWidget(widget.BUTTON, { x: px(x), y: px(y), w: px(w), h: px(h),
     radius: px(h / 2), normal_color: primary ? THEME.primary : THEME.card,
     press_color: primary ? THEME.primaryDeep : THEME.cardActive,
-    color: THEME.textPrimary, text, text_size: font('caption'),
+    color: THEME.textPrimary, text, text_size: font(role),
     ...(diagnosticAction ? { diagnosticAction } : {}), click_func: click });
+}
+
+function renderCleanFocusedEditScreen() {
+  const draft = lastSetDraft;
+  if (!draft) return;
+  const isWeight = cleanEditField === 'weight';
+  const step = draft.step * (draft.fineStep ? 0.5 : 1);
+  cleanText(isWeight ? 'ÄNDRA VIKT' : 'ÄNDRA REPS', 80, 88, 320, 36,
+    'title', THEME.textSecondary);
+  cleanButton('−', 80, 174, 86, 86, () => {
+    if (isWeight) draft.weight = Math.max(0, Math.round((draft.weight - step) * 100) / 100);
+    else draft.reps = Math.max(0, Math.round(draft.reps - 1));
+    scheduleRenderUI();
+  }, false, isWeight ? 'DECREASE_WEIGHT' : 'DECREASE_REPS', 'value');
+  cleanText(isWeight ? `${draft.weight} ${draft.unit}` : String(draft.reps),
+    170, 176, 140, 82, isWeight ? 'value' : 'timer');
+  cleanButton('+', 314, 174, 86, 86, () => {
+    if (isWeight) draft.weight = Math.max(0, Math.round((draft.weight + step) * 100) / 100);
+    else draft.reps = Math.max(0, Math.round(draft.reps + 1));
+    scheduleRenderUI();
+  }, false, isWeight ? 'INCREASE_WEIGHT' : 'INCREASE_REPS', 'value');
+  if (isWeight) {
+    cleanText(`Steg ${step} ${draft.unit}`, 142, 270, 196, 23,
+      'micro', THEME.textSecondary);
+    cleanButton(draft.fineStep ? 'Normalsteg' : 'Finjustera', 150, 296, 180, 34,
+      () => { draft.fineStep = !draft.fineStep; scheduleRenderUI(); }, false, 'TOGGLE_FINE_WEIGHT');
+  } else {
+    cleanText(`${truncate(draft.exerciseName, 19)} · set ${draft.setIndex}`,
+      94, 279, 292, 27, 'caption', THEME.textSecondary);
+  }
+  cleanButton('SPARA', 95, 344, 290, 54, saveEditLastSet, true, 'EDIT_COMPLETED_SET', 'button');
+  cleanButton('Avbryt', 95, 404, 130, 30, cancelEditLastSet);
+  if (workoutController?.canUndoCompletedSet?.(draft.setId)?.allowed) {
+    cleanButton('Ångra set', 255, 404, 130, 30, undoEditedSet, false, 'UNDO_SET');
+  }
+  if (lastSetEditError) cleanText(truncate(lastSetEditError, 42), 72, 331, 336, 17,
+    'micro', THEME.error);
 }
 
 function renderCleanHeader(view, onMenu, label = 'LIFTO WORKOUT') {
@@ -3631,65 +3677,28 @@ function renderCleanHeader(view, onMenu, label = 'LIFTO WORKOUT') {
 }
 
 function renderCleanActiveSetScreen(view) {
-  const isResting = view.state === SESSION_STATES.REST && view.rest;
-  const pending = view.pending;
-  const set = (isResting && pending ? pending.set : null) || view.currentSet;
-  const name = isResting && pending ? pending.exerciseName : view.exerciseName;
-  const setIndex = isResting && pending ? pending.setIndex : view.currentSetIndex;
-  const totalSets = isResting && pending ? pending.totalSets : view.totalSets;
-  const group = isResting && pending ? pending.supersetGroup : view.supersetGroup;
-  const equipment = isResting && pending ? pending.loadingEquipment : view.loadingEquipment;
+  const set = view.currentSet;
   if (!set) return;
-  renderCleanHeader(view, () => { isOverviewOpen = true; scheduleRenderUI(); }, 'STRENGTH · LIFTO');
-  cleanText(truncate(name, 22), 65, 103, 350, 38, 'title');
-  cleanText(`${formatActiveSetProgress(set, setIndex, totalSets)}${group ? ` · SS ${group}` : ''}`,
-    set.isWarmup ? 145 : 74, 142, set.isWarmup ? 261 : 332, 27,
-    'caption', group ? supersetColor(group) : THEME.textSecondary);
-  if (isResting) {
-    cleanText('REST', 160, 170, 78, 22, 'micro', THEME.textSecondary);
-    addLiveLabel('restValue', { x: px(240), y: px(170), w: px(96), h: px(22),
-      text: formatSeconds(view.rest.remaining), color: restStatusColor(view.rest),
-      text_size: font('micro'), align_h: align.CENTER_H, align_v: align.CENTER_V });
-  }
-  const weight = weightStepperDisplay(set.weight, view.unit,
-    formatLoadoutLabel(set.weight, equipment, view.unit, set.plates, set.targetWeight), false);
-  cleanText(`${weight.value} × ${formatEditableSetValue(set.reps, set.isAmrap)} reps`,
-    65, isResting ? 188 : 180, 350, isResting ? 37 : 45, 'title');
-
-  const step = (key, y, value, label, minus, plus, valueClick) => {
-    addWidget(widget.FILL_RECT, { x: px(65), y: px(y), w: px(350), h: px(58),
-      radius: px(24), color: THEME.card });
-    cleanButton('−', 68, y + 3, 58, 52, minus, false, `DECREASE_${key.toUpperCase()}`);
-    cleanButton('+', 354, y + 3, 58, 52, plus, false, `INCREASE_${key.toUpperCase()}`);
-    addLiveLabel(`${key}-value`, { x: px(132), y: px(y + 3), w: px(216), h: px(52),
-      text: value, color: THEME.textPrimary, text_size: font('caption'),
-      align_h: align.CENTER_H, align_v: align.CENTER_V, text_style: text_style.NONE,
-      ...(valueClick ? { click_func: valueClick, diagnosticAction: 'TOGGLE_FINE_WEIGHT' } : {}) });
-    cleanText(label, 120, y + 58, 240, 20, 'micro', THEME.textMuted);
-  };
-  step('weight', 225, weight.value, fineWeightStep ? 'Fine step' : 'Tap weight for fine step',
-    () => { workoutController.adjustWeight(fineWeightStep ? -0.5 : -1); scheduleRenderUI(); },
-    () => { workoutController.adjustWeight(fineWeightStep ? 0.5 : 1); scheduleRenderUI(); },
-    () => { fineWeightStep = !fineWeightStep; scheduleRenderUI(); });
-  step('reps', 297, formatEditableSetValue(set.reps, set.isAmrap), '±1 rep',
-    () => { workoutController.adjustReps(-1); scheduleRenderUI(); },
-    () => { workoutController.adjustReps(1); scheduleRenderUI(); });
-
-  if (set.isWarmup) cleanButton('Skip', 72, 139, 69, 33, () => {
+  cleanText('LIFTO', 155, 79, 170, 30, 'caption', THEME.primaryLight);
+  cleanText(truncate(view.exerciseName, 21), 65, 131, 350, 42, 'title');
+  cleanText(formatActiveSetProgress(set, view.currentSetIndex, view.totalSets),
+    85, 176, 310, 33, 'body', THEME.textSecondary);
+  cleanText(`${set.weight ?? '-'} ${view.unit} · ${formatEditableSetValue(set.reps, set.isAmrap)} reps`,
+    80, 236, 320, 35, 'caption', THEME.textSecondary);
+  if (view.supersetGroup) cleanText(`Superset ${view.supersetGroup}`, 155, 272, 170, 23,
+    'micro', supersetColor(view.supersetGroup));
+  cleanButton('Övningar', 153, 304, 174, 43,
+    () => { isOverviewOpen = true; scheduleRenderUI(); }, false, 'OPEN_EXERCISES');
+  if (set.isWarmup) cleanButton('Hoppa över uppvärmning', 119, 352, 242, 31, () => {
     const skipped = workoutController.skipWarmup();
     controllerUiDirty = true;
     if (skipped && workoutController.view().state === SESSION_STATES.FINISHED) submitWorkout();
   });
-  const actionText = isResting ? 'START NEXT SET' : view.timedSet ? 'START SET' : 'COMPLETE SET';
-  cleanButton(actionText, 82, 383, 316, 45, () => {
+  const actionText = view.timedSet ? 'STARTA SET' : 'SET KLART';
+  cleanButton(actionText, 82, 389, 316, 44, () => {
     const reason = checkRequiredPhoneInput(set);
     if (reason) { phoneRequiredReason = reason; controllerUiDirty = true; return; }
-    if (isResting) {
-      restAlertTracker.reset(); stopVibration(); setRestPrepared(false);
-      if (view.timedSet) workoutController.startTimedSet();
-      else workoutController.nextSet();
-      controllerUiDirty = true;
-    } else if (view.timedSet) {
+    if (view.timedSet) {
       timedTargetAlerted = false;
       workoutController.startTimedSet();
       controllerUiDirty = true;
@@ -3699,41 +3708,48 @@ function renderCleanActiveSetScreen(view) {
       workoutController.completeSet({ repsLeft: set.isUnilateral ? set.reps : null });
       workoutDiagnostics.record(WORKOUT_DIAGNOSTIC_CODES.SET_SAVED);
       syncCompletedSets();
-      if (workoutController.view().state === SESSION_STATES.FINISHED) submitWorkout();
+      const after = workoutController.view();
+      if (after.state === SESSION_STATES.ACTIVE_SET) {
+        const completed = after.allCompletedSets || [];
+        cleanReviewSetId = completed.length ? (completed[completed.length - 1].setId || '__latest__') : null;
+      }
+      if (after.state === SESSION_STATES.FINISHED) submitWorkout();
     }
-  }, true, isResting || view.timedSet ? 'START_SET' : 'COMPLETE_SET');
+  }, true, view.timedSet ? 'START_SET' : 'COMPLETE_SET');
 }
 
 function renderCleanRestScreen(view) {
   const rest = view.rest;
-  renderCleanHeader(view, () => { isOverviewOpen = true; scheduleRenderUI(); }, 'REST');
+  cleanText('VILA', 158, 74, 164, 36, 'title', THEME.primaryLight);
   const color = rest.isOvertime ? THEME.error : rest.isPaused ? THEME.yellow : THEME.primaryPale;
-  addLiveLabel('restLabel', { x: px(80), y: px(98), w: px(320), h: px(30),
-    text: rest.isPaused ? 'Paused' : rest.isOvertime ? 'Overtime' : 'Rest timer',
-    color, text_size: font('caption'), align_h: align.CENTER_H, align_v: align.CENTER_V });
-  addLiveButton('restValue', { x: px(75), y: px(130), w: px(330), h: px(83),
+  addLiveButton('restValue', { x: px(75), y: px(129), w: px(330), h: px(88),
     text: formatSeconds(rest.remaining), color, normal_color: THEME.bg,
     press_color: THEME.primaryDark, text_size: font('timer'), radius: px(12),
     click_func: openWorkoutTimerControls });
   const fraction = rest.duration > 0 ? Math.max(0, Math.min(1, rest.remaining / rest.duration)) : 0;
-  addWidget(widget.FILL_RECT, { x: px(102), y: px(221), w: px(276), h: px(8), radius: px(4), color: THEME.card });
-  if (fraction > 0) addLiveShape('restProgress', { x: px(102), y: px(221),
-    w: px(Math.max(8, 276 * fraction)), h: px(8), radius: px(4), color: THEME.primaryLight });
-  addLiveButton('restPause', { x: px(158), y: px(239), w: px(164), h: px(37),
-    radius: px(18), normal_color: THEME.card, press_color: THEME.cardActive,
-    text: rest.isWorkoutPaused ? 'Zepp paused' : rest.isPaused ? 'Resume' : 'Pause',
-    color: THEME.textPrimary, text_size: font('caption'),
-    diagnosticAction: rest.isPaused ? 'RESUME' : 'PAUSE',
-    click_func: () => { if (!workoutController.view().rest?.isWorkoutPaused) workoutController.toggleRestPause(); } });
-  if (rest.nextExerciseName) {
-    cleanText(`NEXT · ${truncate(rest.nextExerciseName, 23)}`, 65, 287, 350, 26, 'caption');
-    cleanText(formatNextTargetSummary(rest), 65, 315, 350, 31, 'title', THEME.primaryLight);
+  addWidget(widget.FILL_RECT, { x: px(103), y: px(224), w: px(274), h: px(5),
+    radius: px(3), color: THEME.card });
+  if (fraction > 0) addLiveShape('restProgress', { x: px(103), y: px(224),
+    w: px(Math.max(6, 274 * fraction)), h: px(5), radius: px(3), color: THEME.primaryLight });
+  if (rest.nextExerciseName) cleanText(`Nästa: ${truncate(rest.nextExerciseName, 19)}`,
+    70, 236, 340, 28, 'micro', THEME.textSecondary);
+  const lastCheck = workoutController?.canCorrectLastSet?.() || { allowed: false };
+  const latest = lastCheck.set || view.allCompletedSets?.[view.allCompletedSets.length - 1];
+  if (latest) {
+    const reps = `${latest.reps ?? '-'} reps`;
+    const weight = `${latest.weight ?? '-'} ${latest.unit || view.unit}`;
+    if (lastCheck.allowed) {
+      cleanButton(reps, 72, 275, 158, 55, () => startEditSet(latest.setId, 'reps'),
+        false, 'EDIT_COMPLETED_SET');
+      cleanButton(weight, 250, 275, 158, 55, () => startEditSet(latest.setId, 'weight'),
+        false, 'EDIT_COMPLETED_SET');
+    } else {
+      cleanText(`${reps} · ${weight}`, 72, 275, 336, 55, 'caption', THEME.textSecondary);
+    }
   }
-  cleanButton('−10s', 83, 349, 96, 38,
-    () => { workoutController.adjustRest(-10); scheduleRenderUI(); });
-  cleanButton('+30s', 301, 349, 96, 38,
-    () => { workoutController.adjustRest(30); scheduleRenderUI(); });
-  cleanButton('START NEXT SET', 82, 394, 316, 42, () => {
+  cleanButton('Övningar', 156, 340, 168, 37,
+    () => { isOverviewOpen = true; scheduleRenderUI(); }, false, 'OPEN_EXERCISES');
+  cleanButton('NÄSTA SET', 82, 390, 316, 44, () => {
     const reason = view.timedSet && checkRequiredPhoneInput(view.pending?.set || view.currentSet);
     if (reason) { phoneRequiredReason = reason; controllerUiDirty = true; return; }
     restAlertTracker.reset(); stopVibration(); setRestPrepared(false);
@@ -3745,13 +3761,13 @@ function renderCleanRestScreen(view) {
 
 function renderCleanOverviewScreen(view) {
   if (selectedOverviewExerciseIndex !== null) {
-    return renderExerciseSetsScreen(view, view.overviewExercises[selectedOverviewExerciseIndex]);
+    return renderCleanExerciseSetsScreen(view, view.overviewExercises[selectedOverviewExerciseIndex]);
   }
   renderCleanHeader(view, () => { isOverviewOpen = false; scheduleRenderUI(); }, 'LIFTO WORKOUT');
-  cleanText('EXERCISES', 75, 95, 330, 36, 'title');
+  cleanText('ÖVNINGAR', 75, 95, 330, 36, 'title');
   const all = view.overviewExercises || [];
   const progress = workoutProgress(all);
-  cleanText(`${progress.completed} of ${progress.total} sets done`, 75, 128, 330, 24,
+  cleanText(`${progress.completed} av ${progress.total} set klara`, 75, 128, 330, 24,
     'caption', THEME.textSecondary);
   const totalPages = Math.max(1, Math.ceil(all.length / OVERVIEW_PAGE_SIZE));
   overviewPage = Math.min(Math.max(overviewPage, 0), totalPages - 1);
@@ -3761,35 +3777,146 @@ function renderCleanOverviewScreen(view) {
     const current = idx === (view.state === SESSION_STATES.REST
       ? view.pending?.exerciseIndex ?? view.currentExerciseIndex : view.currentExerciseIndex);
     const y = 163 + i * 69;
-    addWidget(widget.BUTTON, { x: px(65), y: px(y), w: px(350), h: px(61),
+    const canSelect = ex.completedSetsCount < ex.totalSets;
+    addWidget(widget.BUTTON, { x: px(65), y: px(y), w: px(281), h: px(61),
       radius: px(18), normal_color: current ? THEME.primaryDark : THEME.card,
       press_color: THEME.cardActive, text: '', diagnosticAction: 'SELECT_EXERCISE',
-      click_func: () => { selectedOverviewExerciseIndex = idx; overviewSetsPage = 0; scheduleRenderUI(); } });
-    cleanText(truncate(ex.name, 20), 83, y + 4, 251, 28, 'caption',
-      ex.supersetGroup ? supersetColor(ex.supersetGroup) : THEME.textPrimary);
-    cleanText(`${ex.completedSetsCount}/${ex.totalSets}`, 335, y + 7, 59, 26,
-      'caption', THEME.textSecondary);
-    if (ex.supersetGroup) cleanText(`SUPERSET ${ex.supersetGroup}`, 83, y + 32, 180, 21,
-      'micro', THEME.primaryLight);
+      click_func: () => {
+        if (!canSelect) return;
+        workoutController.selectExercise(ex.index);
+        cleanReviewSetId = null;
+        isOverviewOpen = false;
+        selectedOverviewExerciseIndex = null;
+        scheduleRenderUI();
+      } });
+    cleanButton('≡', 351, y + 2, 62, 57,
+      () => { selectedOverviewExerciseIndex = idx; overviewSetsPage = 0; scheduleRenderUI(); },
+      false, 'VIEW_EXERCISE_SETS', 'title');
+    cleanText(truncate(ex.name, ex.supersetGroup ? 13 : 16),
+      ex.supersetGroup ? 103 : 82, y + 5, ex.supersetGroup ? 183 : 204, 28, 'caption',
+      canSelect ? THEME.textPrimary : THEME.textSecondary, align.LEFT);
+    cleanText(`${ex.completedSetsCount}/${ex.totalSets}`, 284, y + 7, 54, 25,
+      'micro', THEME.textSecondary);
+    if (ex.supersetGroup) cleanText(String(ex.supersetGroup), 78, y + 28, 35, 24,
+      'micro', supersetColor(ex.supersetGroup));
   });
   if (totalPages > 1) {
     cleanButton('‹', 154, 370, 48, 32, () => { overviewPage = (overviewPage - 1 + totalPages) % totalPages; scheduleRenderUI(); });
     cleanText(`${overviewPage + 1}/${totalPages}`, 210, 370, 60, 32, 'micro', THEME.textSecondary);
     cleanButton('›', 278, 370, 48, 32, () => { overviewPage = (overviewPage + 1) % totalPages; scheduleRenderUI(); });
   }
-  cleanButton('Back', 79, 402, 150, 39,
+  cleanButton('Tillbaka', 79, 402, 150, 39,
     () => { isOverviewOpen = false; scheduleRenderUI(); });
-  cleanButton('Finish Lifto', 248, 402, 153, 39,
+  cleanButton('Avsluta Lifto', 248, 402, 153, 39,
     () => { cleanFinishConfirmationRequested = true; scheduleRenderUI(); }, true, 'FINISH_WORKOUT');
 }
 
-function renderCleanFinishConfirmation() {
-  cleanText('FINISH LIFTO SESSION?', 70, 110, 340, 42, 'title');
-  cleanText('Your Zepp workout continues separately.', 73, 169, 334, 54,
+function renderCleanExerciseSetsScreen(view, exercise) {
+  if (!exercise) {
+    selectedOverviewExerciseIndex = null;
+    return renderCleanOverviewScreen(view);
+  }
+  cleanButton('‹', 70, 57, 54, 38,
+    () => { selectedOverviewExerciseIndex = null; scheduleRenderUI(); });
+  cleanText(truncate(exercise.name, 18), 126, 61, 278, 34, 'title');
+  cleanText(`${exercise.completedSetsCount}/${exercise.totalSets} set klara`,
+    95, 105, 290, 29, 'caption', THEME.textSecondary);
+  const sets = exercise.sets || [];
+  const pageSize = 4;
+  const totalPages = Math.max(1, Math.ceil(sets.length / pageSize));
+  overviewSetsPage = Math.min(Math.max(overviewSetsPage, 0), totalPages - 1);
+  const start = overviewSetsPage * pageSize;
+  sets.slice(start, start + pageSize).forEach((set, i) => {
+    const y = 146 + i * 55;
+    addWidget(widget.FILL_RECT, { x: px(66), y: px(y), w: px(348), h: px(49),
+      radius: px(14), color: THEME.card });
+    cleanText(`${set.isWarmup ? 'U' : 'Set'} ${set.setIndex}`,
+      77, y + 9, 85, 31, 'micro', THEME.textSecondary);
+    const canEdit = set.completed && set.setId
+      ? workoutController.canCorrectCompletedSet(set.setId) : { allowed: false };
+    if (canEdit.allowed) {
+      cleanButton(`${set.completed.reps} reps`, 164, y + 3, 103, 43,
+        () => startEditSet(set.setId, 'reps'), false, 'EDIT_COMPLETED_SET');
+      cleanButton(`${set.completed.weight} ${set.unit || view.unit}`, 275, y + 3, 132, 43,
+        () => startEditSet(set.setId, 'weight'), false, 'EDIT_COMPLETED_SET');
+    } else {
+      const values = set.completed || { reps: set.targetReps, weight: set.targetWeight };
+      cleanText(`${values.reps ?? '-'} × ${values.weight ?? '-'} ${set.unit || view.unit}`,
+        172, y + 9, 223, 31, 'micro', THEME.textSecondary);
+    }
+  });
+  if (totalPages > 1) {
+    cleanButton('‹', 156, 372, 48, 30,
+      () => { overviewSetsPage = Math.max(0, overviewSetsPage - 1); scheduleRenderUI(); });
+    cleanText(`${overviewSetsPage + 1}/${totalPages}`, 211, 372, 58, 30,
+      'micro', THEME.textSecondary);
+    cleanButton('›', 276, 372, 48, 30,
+      () => { overviewSetsPage = Math.min(totalPages - 1, overviewSetsPage + 1); scheduleRenderUI(); });
+  }
+  cleanButton(exercise.completedSetsCount < exercise.totalSets ? 'VÄLJ ÖVNING' : 'TILLBAKA',
+    100, 397, 280, 36, () => {
+      if (exercise.completedSetsCount < exercise.totalSets) {
+        workoutController.selectExercise(exercise.index);
+        cleanReviewSetId = null;
+        isOverviewOpen = false;
+      }
+      selectedOverviewExerciseIndex = null;
+      scheduleRenderUI();
+    }, true, 'SELECT_EXERCISE');
+}
+
+function renderCleanAllSetsDoneScreen(view) {
+  const progress = workoutProgress(view.overviewExercises);
+  cleanText('PASS KLART', 75, 93, 330, 40, 'title', THEME.primaryLight);
+  cleanText(`${progress.completed} set registrerade`, 75, 147, 330, 31,
     'caption', THEME.textSecondary);
-  cleanButton('Cancel', 76, 301, 152, 58,
+  const check = workoutController?.canCorrectLastSet?.() || { allowed: false };
+  if (check.allowed) {
+    cleanText('SENASTE SET', 104, 201, 272, 26, 'micro', THEME.textSecondary);
+    cleanButton(`${check.set.reps} reps`, 72, 238, 158, 54,
+      () => startEditSet(check.set.setId, 'reps'), false, 'EDIT_COMPLETED_SET');
+    cleanButton(`${check.set.weight} ${check.set.unit || view.unit}`, 250, 238, 158, 54,
+      () => startEditSet(check.set.setId, 'weight'), false, 'EDIT_COMPLETED_SET');
+  }
+  cleanButton('Övningar', 156, 316, 168, 39,
+    () => { isOverviewOpen = true; scheduleRenderUI(); }, false, 'OPEN_EXERCISES');
+  cleanButton('AVSLUTA LIFTO', 82, 382, 316, 48,
+    () => { cleanFinishConfirmationRequested = true; scheduleRenderUI(); },
+    true, 'FINISH_WORKOUT');
+}
+
+function renderCleanNoRestReviewScreen(view) {
+  const completedSets = view.allCompletedSets || [];
+  const completed = cleanReviewSetId === '__latest__'
+    ? completedSets[completedSets.length - 1]
+    : completedSets.find((set) => set.setId === cleanReviewSetId);
+  if (!completed) {
+    cleanReviewSetId = null;
+    return renderCleanActiveSetScreen(view);
+  }
+  cleanText('SET KLART', 85, 92, 310, 42, 'title', THEME.primaryLight);
+  cleanText(truncate(completed.exerciseName, 20), 80, 160, 320, 34, 'caption');
+  const check = workoutController?.canCorrectCompletedSet?.(completed.setId) || { allowed: false };
+  if (check.allowed) {
+    cleanButton(`${completed.reps} reps`, 72, 237, 158, 56,
+      () => startEditSet(completed.setId, 'reps'), false, 'EDIT_COMPLETED_SET');
+    cleanButton(`${completed.weight} ${completed.unit || view.unit}`, 250, 237, 158, 56,
+      () => startEditSet(completed.setId, 'weight'), false, 'EDIT_COMPLETED_SET');
+  } else cleanText(`${completed.reps ?? '-'} reps · ${completed.weight ?? '-'} ${completed.unit || view.unit}`,
+    75, 237, 330, 56, 'caption', THEME.textSecondary);
+  cleanButton('Övningar', 156, 313, 168, 39,
+    () => { isOverviewOpen = true; scheduleRenderUI(); }, false, 'OPEN_EXERCISES');
+  cleanButton('NÄSTA SET', 82, 384, 316, 46,
+    () => { cleanReviewSetId = null; scheduleRenderUI(); }, true, 'START_SET');
+}
+
+function renderCleanFinishConfirmation() {
+  cleanText('AVSLUTA LIFTO?', 70, 110, 340, 42, 'title');
+  cleanText('Träningen i Zepp fortsätter.', 73, 169, 334, 54,
+    'caption', THEME.textSecondary);
+  cleanButton('Avbryt', 76, 301, 152, 58,
     () => { cleanFinishConfirmationRequested = false; scheduleRenderUI(); });
-  cleanButton('Confirm', 250, 301, 152, 58, () => {
+  cleanButton('Bekräfta', 250, 301, 152, 58, () => {
     cleanFinishConfirmationRequested = false;
     isOverviewOpen = false;
     workoutController.finishWorkout();
@@ -3802,7 +3929,7 @@ function renderScreen() {
     return renderCleanFinishConfirmation();
   }
   if (isEditLastSetOpen) {
-    if (lastSetDraft) return renderEditLastSetScreen();
+    if (lastSetDraft) return renderCleanFocusedEditScreen();
     isEditLastSetOpen = false;
   }
   if (isSyncDetailsOpen) return renderSyncDetailsModal();
@@ -3850,9 +3977,15 @@ function renderScreen() {
   if (view.state === SESSION_STATES.READY) return renderReadyScreen(view);
   if (isOverviewOpen && view.state !== SESSION_STATES.FINISHED) return renderCleanOverviewScreen(view);
   if (view.timedSet && view.timedSet.phase !== 'READY' && view.timedSet.phase !== 'REST') return renderTimedSetScreen(view);
-  if (view.state === SESSION_STATES.ACTIVE_SET) return renderCleanActiveSetScreen(view);
+  if (view.state === SESSION_STATES.ACTIVE_SET) {
+    const progress = workoutProgress(view.overviewExercises);
+    if (progress.total > 0 && progress.completed === progress.total) {
+      return renderCleanAllSetsDoneScreen(view);
+    }
+    if (cleanReviewSetId) return renderCleanNoRestReviewScreen(view);
+    return renderCleanActiveSetScreen(view);
+  }
   if (view.state === SESSION_STATES.REST) {
-    if (isRestMinimized) return renderCleanActiveSetScreen(view);
     return renderCleanRestScreen(view);
   }
   return renderFinishedScreen(view);
@@ -4264,6 +4397,8 @@ DataWidget(
   BasePage({
     onInit() {
       cleanFinishConfirmationRequested = false;
+      cleanEditField = 'reps';
+      cleanReviewSetId = null;
       isSyncDetailsOpen = false;
       isEditLastSetOpen = false;
       lastSetDraft = null;
@@ -4279,6 +4414,7 @@ DataWidget(
       console.log('[lifto-ext] data-widget onInit');
 
       workoutController = createWorkoutController({
+        manualFinishAfterLastSet: true,
         store: sessionStore,
         request: (type, payload) => send(type, payload),
         onChange: markControllerUiDirty,
