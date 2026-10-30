@@ -5,7 +5,7 @@ import { createWorkoutExtensionManifest } from '../shared/workout-extension-mani
 
 // This design branch updates the Workout Extension independently of the
 // unchanged Companion release and the PR #4 preview already on the watch.
-const CLEAN_WORKOUT_VERSION = Object.freeze({ name: '0.5.16', code: 52 });
+const CLEAN_WORKOUT_VERSION = Object.freeze({ name: '0.5.17', code: 53 });
 
 export function parseWorkoutExtensionAppId(appIdInput = process.env.ZEPP_WORKOUT_EXTENSION_APP_ID) {
   if (appIdInput === undefined || appIdInput === null || appIdInput === '') {

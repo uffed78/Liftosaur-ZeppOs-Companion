@@ -11,6 +11,39 @@ function extract(name) {
   return source.slice(start, source.indexOf('\n}', start) + 2);
 }
 
+test('minimal ready screen keeps pass selection and explicit start', () => {
+  const controls = [];
+  const labels = [];
+  const env = {
+    MINIMAL_UI_BUILD: 'UI 17',
+    THEME: { textMuted: 1, primaryLight: 2, textSecondary: 3, textPrimary: 4 },
+    align: { LEFT: 1 },
+    readyPage: 0, listPage: 3, screen: 'SESSION',
+    EXTENSION_SCREENS: { DAYS: 'DAYS' },
+    cleanText(text) { labels.push(text); },
+    cleanButton(text, x, y, w, h, click) { controls.push({ text, click }); },
+    truncate: text => text,
+    readyExercisePage: (exercises, page) => ({ exercises: exercises.slice(page * 2, page * 2 + 2),
+      page, totalPages: 2 }),
+    scheduleRenderUI() {},
+    nativePauseReconciler: { reset() { env.reset = true; } },
+    workoutController: { startWorkout() { env.started = true; } },
+  };
+  const view = { dayName: 'Helkropp + Bänk', programName: 'LiftTrack', totalExercises: 3,
+    overviewExercises: [{ name: 'Squat' }, { name: 'T Bar Row' }, { name: 'Bench Press' }] };
+  vm.createContext(env);
+  vm.runInContext(extract('renderCleanReadyScreen'), env);
+  env.renderCleanReadyScreen(view);
+  assert.ok(labels.includes('Squat'));
+  assert.ok(labels.includes('T Bar Row'));
+  controls.find(item => item.text === 'STARTA PASS').click();
+  assert.equal(env.started, true);
+  assert.equal(env.reset, true);
+  controls.find(item => item.text === 'BYT PASS').click();
+  assert.equal(env.screen, 'DAYS');
+  assert.equal(env.listPage, 0);
+});
+
 test('minimal active screen saves a set without weight or rep controls', () => {
   const controls = [];
   const set = { setId: 'bench-2', weight: 60, reps: 8, isUnilateral: false };
@@ -19,6 +52,7 @@ test('minimal active screen saves a set without weight or rep controls', () => {
   let completed = 0;
   let synced = 0;
   const env = {
+    MINIMAL_UI_BUILD: 'UI 17',
     SESSION_STATES: { REST: 'REST', FINISHED: 'FINISHED' },
     THEME: { textPrimary: 1, textSecondary: 2, textMuted: 3, primaryLight: 4 },
     widget: { FILL_RECT: 1 }, px: x => x, font: () => 12,
@@ -26,7 +60,7 @@ test('minimal active screen saves a set without weight or rep controls', () => {
     addWidget() {}, addLiveLabel(key, props) { controls.push({ key, ...props }); },
     cleanText() {}, renderCleanHeader() {},
     cleanButton(text, x, y, w, h, click, primary, diagnosticAction) {
-      controls.push({ text, click, diagnosticAction });
+      controls.push({ text, x, y, w, h, click, diagnosticAction });
     },
     truncate: text => text, formatActiveSetProgress: () => 'Set 2/4',
     formatEditableSetValue: value => String(value),
@@ -43,6 +77,11 @@ test('minimal active screen saves a set without weight or rep controls', () => {
   env.renderCleanActiveSetScreen(view);
   assert.equal(controls.some(item => item.text === '+' || item.text === '−'), false);
   assert.ok(controls.some(item => item.text === 'Övningar'));
+  assert.ok(controls.find(item => item.text === 'SET KLART').y <
+    controls.find(item => item.text === 'Övningar').y);
+  assert.ok(controls.find(item => item.text === 'Övningar').y +
+    controls.find(item => item.text === 'Övningar').h < 442,
+  'the exercise action stays above the clock footer');
   controls.find(item => item.text === 'SET KLART').click();
   assert.equal(completed, 1);
   assert.equal(synced, 1);
@@ -53,8 +92,9 @@ test('clean exercise list chooses directly, opens set details, and confirms fini
   let finishCount = 0;
   let submitCount = 0;
   const env = {
+    MINIMAL_UI_BUILD: 'UI 17',
     THEME: { card: 1, primaryDark: 2, cardActive: 3, textPrimary: 4,
-      textSecondary: 5, primaryLight: 6 },
+      textSecondary: 5, primaryLight: 6, textMuted: 7, bg: 0 },
     widget: { BUTTON: 1 }, px: x => x, font: () => 12, align: { LEFT: 0 },
     cleanText() {}, renderCleanHeader() {},
     cleanButton(text, x, y, w, h, click, primary, diagnosticAction) {
@@ -83,7 +123,7 @@ test('clean exercise list chooses directly, opens set details, and confirms fini
   env.selectedOverviewExerciseIndex = null;
   controls.find(item => item.diagnosticAction === 'SELECT_EXERCISE').click_func();
   assert.equal(env.selected, 0);
-  controls.find(item => item.text === 'Avsluta Lifto').click();
+  controls.find(item => item.text === 'Avsluta').click();
   assert.equal(env.cleanFinishConfirmationRequested, true);
   assert.equal(finishCount, 0);
   controls.length = 0;
@@ -99,8 +139,10 @@ test('correction screens change one field and offer the finer weight step', () =
   const draft = { setId: 'set-1', weight: 80, reps: 8, unit: 'kg',
     step: 2.5, fineStep: false, exerciseName: 'Squat', setIndex: 1 };
   const env = {
+    MINIMAL_UI_BUILD: 'UI 17',
+    align: { CENTER_H: 1 },
     lastSetDraft: draft, cleanEditField: 'reps', lastSetEditError: null,
-    THEME: { textSecondary: 1, error: 2 },
+    THEME: { textSecondary: 1, error: 2, textMuted: 3, textPrimary: 4 },
     cleanText(text) { labels.push(text); },
     cleanButton(text, x, y, w, h, click) { controls.push({ text, click }); },
     scheduleRenderUI() {}, truncate: text => text,
